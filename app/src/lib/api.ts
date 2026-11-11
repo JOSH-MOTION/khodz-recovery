@@ -6,6 +6,12 @@ import type {
   FingerprintResult,
   ImageAnalysis,
   ImageInfo,
+  ItemFilter,
+  ItemPage,
+  ItemStats,
+  ScanOutcome,
+  ScanProgress,
+  ScanSource,
   JobProgress,
   Page,
   PhysicalDisk,
@@ -47,6 +53,14 @@ export const api = {
     return invoke<FingerprintResult>("fingerprint_image", { path, jobId, onProgress: channel });
   },
   cancelJob: (jobId: string) => invoke<boolean>("cancel_job", { jobId }),
+  startScan: (source: ScanSource, mode: "quick" | "deep", jobId: string, onProgress: (p: ScanProgress) => void) => {
+    const channel = new Channel<ScanProgress>();
+    channel.onmessage = onProgress;
+    return invoke<ScanOutcome>("start_scan", { source, mode, jobId, onProgress: channel });
+  },
+  listScanItems: (scanId: number, filter: ItemFilter, page: Page) =>
+    invoke<ItemPage>("list_scan_items", { scanId, filter, page }),
+  scanItemStats: (scanId: number) => invoke<ItemStats>("scan_item_stats", { scanId }),
 };
 
 export function errorMessage(err: unknown): string {

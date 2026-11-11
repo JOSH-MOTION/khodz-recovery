@@ -13,9 +13,11 @@ name = "khodz_recovery_lib"
 crate-type = ["rlib"]
 
 [dependencies]
+khodz-carve = { version = "0.1.0", path = "../../crates/khodz-carve" }
 khodz-core = { path = "../../crates/khodz-core" }
 khodz-db = { path = "../../crates/khodz-db" }
 khodz-device = { path = "../../crates/khodz-device" }
+khodz-engine = { version = "0.1.0", path = "../../crates/khodz-engine" }
 khodz-fs = { version = "0.1.0", path = "../../crates/khodz-fs" }
 khodz-io = { version = "0.1.0", path = "../../crates/khodz-io" }
 khodz-part = { version = "0.1.0", path = "../../crates/khodz-part" }

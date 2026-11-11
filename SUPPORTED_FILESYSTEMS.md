@@ -36,6 +36,23 @@ and entry-array CRCs, backup header fallback) and superfloppy volumes are ✅ ve
   must land on free clusters; if more than one candidate fits the extents are marked *partial*,
   never *exact*.
 
+## Signature carving (deep scan, any filesystem or none)
+
+| Format | Status when intact | How completeness is verified |
+|---|---|---|
+| JPEG | Complete | marker chain, entropy data free of invalid markers and of 512+ byte zero runs |
+| PNG | Complete | CRC of every chunk through IEND |
+| GIF | Complete | block chain + LZW decode: valid codes, exactly width × height pixels |
+| PDF | Complete | `startxref` points at `xref` or an xref-stream object; incremental updates followed |
+| ZIP, DOCX, XLSX, PPTX | Complete | every local header ↔ central directory entry ↔ end record (ZIP64: partial) |
+| MP4, MOV, HEIC | Unverified | top-level box chain only; media payload cannot be verified |
+| BMP, WAV, AVI, WebP | Unverified | header plausibility and declared length only |
+
+Fragmented, truncated or overwritten files are reported **Partial** with a reason and the
+length that validated; they are never reported Complete (regression-tested). Known limit: a
+JPEG whose gap is filled with another JPEG's image data is not detectable without decoding.
+Not carved yet: MP3, OLE (.doc/.xls/.ppt), SQLite, camera RAW, HEIF sequences, archives other than ZIP.
+
 ## Not supported / not yet implemented
 
 - **HFS+ and APFS file listing** — detection only. Needs the B-tree catalog (HFS+) and

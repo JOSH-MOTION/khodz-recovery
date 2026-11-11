@@ -7,6 +7,8 @@ members = [
     "crates/khodz-io",
     "crates/khodz-part",
     "crates/khodz-fs",
+    "crates/khodz-carve",
+    "crates/khodz-engine",
     "app/src-tauri",
 ]
 

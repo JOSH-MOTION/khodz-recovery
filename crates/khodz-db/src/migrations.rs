@@ -74,6 +74,21 @@ const MIGRATIONS: &[&str] = &[
         value TEXT NOT NULL
     );
     "#,
+    // v2 — fields produced by the scan engine (Stage 5)
+    r#"
+    ALTER TABLE scan_items ADD COLUMN volume_offset INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE scan_items ADD COLUMN name_complete INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE scan_items ADD COLUMN is_system     INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE scan_items ADD COLUMN data_state    TEXT NOT NULL DEFAULT 'present'
+        CHECK (data_state IN ('present','erased','unknown'));
+    ALTER TABLE scan_items ADD COLUMN carve_status  TEXT
+        CHECK (carve_status IS NULL OR carve_status IN ('complete','unverified','partial'));
+    ALTER TABLE scan_items ADD COLUMN note          TEXT;
+    ALTER TABLE scan_items ADD COLUMN resident      BLOB;
+    CREATE INDEX idx_scan_items_path    ON scan_items(scan_id, path);
+    CREATE INDEX idx_scan_items_deleted ON scan_items(scan_id, is_deleted);
+    CREATE INDEX idx_scan_items_origin  ON scan_items(scan_id, origin);
+    "#,
 ];
 
 pub const LATEST: u32 = MIGRATIONS.len() as u32;
@@ -104,6 +119,31 @@ mod tests {
         assert_eq!(v, LATEST);
         // Idempotent.
         migrate(&mut conn).unwrap();
+    }
+
+    #[test]
+    fn upgrades_v1_database_with_data_in_place() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute_batch(
+            "INSERT INTO scans (source_kind, source_path, source_size, scan_mode, status, started_at)
+               VALUES ('image', 'old.img', 10, 'quick', 'completed', 0);
+             INSERT INTO scan_items (scan_id, name, path, size, origin, extent_quality)
+               VALUES (1, 'a.txt', '/a.txt', 5, 'metadata', 'exact');",
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        let v: u32 = conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+        assert_eq!(v, LATEST);
+        let (path, state): (String, String) = conn
+            .query_row("SELECT path, data_state FROM scan_items", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!(
+            (path.as_str(), state.as_str()),
+            ("/a.txt", "present"),
+            "old rows kept, new columns defaulted"
+        );
     }
 
     #[test]

@@ -13,12 +13,14 @@ vi.mock("../lib/api", async (importOriginal) => {
       analyzeImage: vi.fn(),
       fingerprintImage: vi.fn(),
       cancelJob: vi.fn(),
+      startScan: vi.fn(),
     },
   };
 });
 
 import { api } from "../lib/api";
 import { DiskImagesPage } from "../pages/DiskImagesPage";
+import { ScanProvider } from "../lib/scan";
 
 const info: ImageInfo = {
   path: "D:\\images\\usb-stick.img",
@@ -68,7 +70,11 @@ beforeEach(() => {
 
 async function openImage() {
   const user = userEvent.setup();
-  render(<DiskImagesPage />);
+  render(
+    <ScanProvider>
+      <DiskImagesPage />
+    </ScanProvider>,
+  );
   await user.click(screen.getByRole("button", { name: "Open image" }));
   await screen.findByText("usb-stick.img");
   return user;
@@ -88,7 +94,14 @@ describe("DiskImagesPage", () => {
     expect(screen.getByText("30,765,219,840 bytes")).toBeInTheDocument();
     expect(screen.getByText("Opened read-only")).toBeInTheDocument();
     expect(screen.getByText("File marked read-only")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Scan image" })).toBeDisabled();
+  });
+
+  it("starts a quick scan of the open image", async () => {
+    vi.mocked(api.startScan).mockReturnValue(new Promise(() => {}));
+    const user = await openImage();
+    await user.click(screen.getByRole("button", { name: "Scan image" }));
+    await user.click(screen.getByRole("button", { name: "Start scan" }));
+    expect(api.startScan).toHaveBeenCalledWith({ kind: "image", path: info.path }, "quick", expect.any(String), expect.any(Function));
   });
 
   it("does nothing when the file dialog is cancelled", async () => {

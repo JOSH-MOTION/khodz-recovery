@@ -1674,6 +1674,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "khodz-carve"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "khodz-core",
+ "khodz-io",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+]
+
+[[package]]
 name = "khodz-core"
 version = "0.1.0"
 
@@ -1694,6 +1706,18 @@ dependencies = [
  "plist",
  "serde",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "khodz-engine"
+version = "0.1.0"
+dependencies = [
+ "khodz-carve",
+ "khodz-core",
+ "khodz-fs",
+ "khodz-io",
+ "khodz-part",
+ "serde",
 ]
 
 [[package]]
@@ -1733,9 +1757,11 @@ dependencies = [
 name = "khodz-recovery"
 version = "0.1.0"
 dependencies = [
+ "khodz-carve",
  "khodz-core",
  "khodz-db",
  "khodz-device",
+ "khodz-engine",
  "khodz-fs",
  "khodz-io",
  "khodz-part",

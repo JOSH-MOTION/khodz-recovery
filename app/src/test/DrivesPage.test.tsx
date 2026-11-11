@@ -5,10 +5,11 @@ import type { PhysicalDisk } from "../lib/types";
 
 vi.mock("../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/api")>();
-  return { ...actual, api: { listDevices: vi.fn() } };
+  return { ...actual, api: { listDevices: vi.fn(), startScan: vi.fn(), cancelJob: vi.fn() } };
 });
 
 import { api } from "../lib/api";
+import { ScanProvider } from "../lib/scan";
 import { DrivesPage, isExternal } from "../pages/DrivesPage";
 
 // Test fixtures shaped like real output from this project's Windows dev machine.
@@ -97,10 +98,38 @@ describe("DrivesPage", () => {
     expect(screen.getByText(/2 drives · 267\.1 GiB total/)).toBeInTheDocument();
   });
 
-  it("keeps scanning disabled until the scan engine exists", async () => {
-    vi.mocked(api.listDevices).mockResolvedValue([systemDisk]);
-    render(<DrivesPage />);
-    await screen.findByText("SanDisk SD9TN8W-256G-1006");
+  it("starts a read-only device scan through the scan dialog", async () => {
+    vi.mocked(api.listDevices).mockResolvedValue([usbStick]);
+    vi.mocked(api.startScan).mockReturnValue(new Promise(() => {}));
+    const user = userEvent.setup();
+    render(
+      <ScanProvider>
+        <DrivesPage />
+      </ScanProvider>,
+    );
+    await screen.findByText("SanDisk 3.2Gen1");
+    await user.click(screen.getByRole("button", { name: "Scan" }));
+    const dialog = screen.getByRole("dialog", { name: "Scan SanDisk 3.2Gen1" });
+    expect(within(dialog).getByText(/Read-only/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("radio", { name: /Deep scan/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Start scan" }));
+    expect(api.startScan).toHaveBeenCalledWith(
+      { kind: "device", path: usbStick.device_path, label: "SanDisk 3.2Gen1" },
+      "deep",
+      expect.any(String),
+      expect.any(Function),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("cannot scan a drive without media", async () => {
+    vi.mocked(api.listDevices).mockResolvedValue([{ ...usbStick, media_present: false, volumes: [] }]);
+    render(
+      <ScanProvider>
+        <DrivesPage />
+      </ScanProvider>,
+    );
+    await screen.findByText("No media");
     expect(screen.getByRole("button", { name: "Scan" })).toBeDisabled();
   });
 

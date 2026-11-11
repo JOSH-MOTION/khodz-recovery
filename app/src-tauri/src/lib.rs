@@ -3,6 +3,7 @@
 
 mod commands;
 mod images;
+mod scans;
 mod state;
 
 use tauri::Manager;
@@ -34,6 +35,10 @@ pub fn run() {
             images::analyze_image,
             images::fingerprint_image,
             images::cancel_job,
+            scans::start_scan,
+            scans::list_scan_items,
+            scans::scan_item_stats,
+            scans::get_scan_item,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start Khodz Recovery");

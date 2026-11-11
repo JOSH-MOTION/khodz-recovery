@@ -29,13 +29,49 @@ Vite 8.3, Tailwind 4.3, TypeScript 7.0, Vitest 5.1.
 | 2 | Device discovery | Lists physical disks + volumes with size/model/bus/removable on Windows; macOS module compiles and is tested in CI; UI drive cards from real data (no mocks) | ☑ Windows (2026-11-11) · macOS: parser unit-tested + cross-compiled, **not yet run on a Mac** |
 | 3 | Read-only access + images | `BlockSource` for images, Windows drives, macOS rdisk; bounded cache; cancellation; disconnect → `DeviceLost`; source-unchanged hash test | ☑ Windows images + raw devices (2026-11-11; elevated read verified on a USB stick, unelevated denial verified) · macOS: compiles only |
 | 4 | Partitions + FS parsing | MBR/GPT; probe+walk for FAT32, exFAT, NTFS, HFS+, APFS (live files); fixture images per FS | ◐ MBR/GPT + FAT32/exFAT/NTFS ☑ verified on Windows-built images (2026-11-11) · HFS+/APFS detection only — walking needs a Mac for fixtures |
-| 5 | Quick + deep scan | Deleted-entry discovery (NTFS, FAT32, exFAT first); carving for JPEG/PNG/GIF/PDF/ZIP-family/MP4/MOV/MP3/WAV with validators; fragmentation honesty tests | ☐ |
+| 5 | Quick + deep scan | Deleted-entry discovery (NTFS, FAT32, exFAT first); carving for JPEG/PNG/GIF/PDF/ZIP-family/MP4/MOV/MP3/WAV with validators; fragmentation honesty tests | ☑ Windows, images (2026-11-11) · live-drive scans need the app run as Administrator (helper not built) · MP3 not carved |
 | 6 | Results explorer + preview | Virtualised tree/list from paged DB; filters; image/text/hex preview (preview reads ≤ 8 MiB) | ☐ |
 | 7 | Recovery + integrity | Destination validation incl. same-disk refusal; streaming copy + SHA-256 verify; manifest; recovery history | ☐ |
 | 8 | Partition analysis | Lost partition search, overlapping/conflicting table reporting, scan of found partitions | ☐ |
 | 9 | Installers + CI matrix | MSI/NSIS on Windows; `.dmg` on macOS (unsigned unless credentials supplied); GitHub Actions matrix running the full regression suite | ☐ |
 
 Each stage: implement → run tests → fix → update docs → only then continue.
+
+## Stage 5 — delivered
+
+- `crates/khodz-carve`: sector-aligned signature carving with structural validators —
+  JPEG (marker chain, clean entropy data, zero-run detection), PNG (every chunk CRC), GIF
+  (block chain **and full LZW decode check: valid codes, exact width × height pixels**), PDF
+  (`startxref` must point at `xref` or an xref-stream object; incremental updates), ZIP/DOCX/
+  XLSX/PPTX (local headers ↔ central directory ↔ end record), MP4/MOV/HEIC (box chain),
+  BMP/WAV/AVI/WebP (header + declared length). Statuses: **Complete** (verified end to end),
+  **Unverified** (payload not checkable: BMP, RIFF, MP4/MOV/HEIC), **Partial** (with reason).
+  Complete files are skipped over; hostile sizes are capped per format.
+- `crates/khodz-engine`: quick scan = partition table → each volume → metadata walk; deep
+  scan = quick + carving of the whole source, skipping offsets explained by metadata so files
+  are not listed twice. Deleted items whose data reads back as zeros are marked **erased**.
+  Volume errors are recorded and the scan continues; device loss/cancel stop it.
+- `crates/khodz-db` schema v2 (in-place migration, tested from a populated v1 database):
+  scan-item columns for volume offset, name completeness, system flag, data state, carve
+  status, note, resident data; batched transactional inserts; filtered, LIKE-escaped, paged
+  listing; per-scan stats.
+- App: scan jobs with read-only open, results streamed to SQLite in 2,000-item transactions,
+  throttled progress (≤10 Hz), cancel, and honest final status (completed / cancelled /
+  device lost / failed, with partial results kept). UI: Quick/Deep choice dialog from Drives
+  and Disk Images, live progress with phase and cancel, Results page with stats, All / Deleted /
+  Found-by-signature views, search, paging and a plain-language status per item.
+
+Verified in the real app: deep scan of the real-encoder image → 12 carved, 6 verified, BMP
+unverified, every broken copy partial; quick scan of the Windows-built multi-volume disk → all
+7 deleted files across FAT32/NTFS/exFAT, each correctly labelled "Deleted · erased" (TRIM).
+
+Real-world bug caught by the regression suite: a GIF with another file spliced into its middle
+passed a block-structure-only check; GIF validation now decodes LZW (see SUPPORTED_FILESYSTEMS.md).
+
+Limitations: scanning a live drive needs the app to run as Administrator (an elevated helper
+is still planned); MP3/OLE (old .doc/.xls)/SQLite/RAW photo formats are not carved; a JPEG
+fragment gap filled with another JPEG's image data cannot be detected without decoding; carving
+assumes files start on a sector boundary.
 
 ## Stage 4 — delivered (partially; see status)
 

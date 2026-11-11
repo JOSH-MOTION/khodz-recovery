@@ -1,0 +1,17 @@
+[package]
+name = "khodz-engine"
+description = "Scan orchestration (quick metadata scan, deep carving scan) for Khodz Recovery"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+khodz-core = { path = "../khodz-core" }
+khodz-io = { path = "../khodz-io" }
+khodz-part = { path = "../khodz-part" }
+khodz-fs = { path = "../khodz-fs" }
+khodz-carve = { path = "../khodz-carve" }
+serde = { version = "1.0.229", features = ["derive"] }

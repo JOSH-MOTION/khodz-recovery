@@ -42,10 +42,10 @@ engine is usable from a CLI (`khodz-cli`, used heavily by tests) without Tauri.
 | `khodz-device` *(implemented)* | Enumerate physical disks and volumes, model/serial/size/bus/removable, volume→disk mapping. | Windows: probe `\\.\PhysicalDriveN` + `FindFirstVolumeW`, zero-access handles, `IOCTL_STORAGE_QUERY_PROPERTY`, `IOCTL_DISK_GET_DRIVE_GEOMETRY_EX`, `IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS`. macOS: `diskutil -plist` (chosen over DiskArbitration/IOKit: no `unsafe`, APFS mapping built in). Separate modules; IOCTL and plist parsers are pure and tested on every OS. |
 | `khodz-part` *(implemented)* | MBR, EBR chains, GPT (header CRC + backup), lost-partition scan by boot-sector/superblock signatures. | Never trusts a table blindly; reports conflicts. |
 | `khodz-fs` *(FAT/exFAT/NTFS implemented; HFS+/APFS detect-only)* | One module per family. Each exposes `probe()`, `open()`, `walk()` (live + deleted entries), `extents(file)`. | Every recovered entry carries a **confidence** and an **extent source** (metadata-exact / metadata-assumed-contiguous / carved). |
-| `khodz-carve` | Header/footer signatures + per-format validators (JPEG markers, PNG CRC chunks, ZIP central directory, PDF xref/EOF, MP4 box tree, …). | A carved file is "complete" only if its validator passes end-to-end; otherwise "partial" or rejected. |
+| `khodz-carve` *(implemented)* | Header/footer signatures + per-format validators (JPEG markers, PNG CRC chunks, ZIP central directory, PDF xref/EOF, MP4 box tree, …). | A carved file is "complete" only if its validator passes end-to-end; otherwise "partial" or rejected. |
 | `khodz-recover` | Destination validation, streaming copy, SHA-256 during read and re-read after write, manifest. | Refuses destinations on the source physical disk unless an explicit override is set and logged. Never overwrites existing files (unique-name policy). |
 | `khodz-db` | Schema migrations, scans, found items (paged), recoveries, settings. | Item tables are paged; the UI never loads a full result set. |
-| `khodz-engine` | Job runner (worker threads), cancellation, device-disconnect handling, progress events at ≤10 Hz. | A job ends in exactly one terminal state: completed / cancelled / failed(reason) / device_lost. |
+| `khodz-engine` *(scanning implemented)* | Job runner (worker threads), cancellation, device-disconnect handling, progress events at ≤10 Hz. | A job ends in exactly one terminal state: completed / cancelled / failed(reason) / device_lost. |
 
 ## 3. Data flow: scan
 

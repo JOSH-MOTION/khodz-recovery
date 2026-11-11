@@ -196,4 +196,62 @@ export interface FingerprintResult {
   elapsed_ms: number;
 }
 
+// Mirrors app/src-tauri/src/scans.rs, crates/khodz-engine and crates/khodz-db/src/items.rs
+export type ScanSource = { kind: "image"; path: string } | { kind: "device"; path: string; label: string | null };
+export type ScanPhase = "partitions" | "metadata" | "carving";
+
+export interface ScanProgress {
+  phase: ScanPhase;
+  bytes_done: number;
+  bytes_total: number;
+  items_found: number;
+  detail: string | null;
+}
+
+export interface ScanOutcome {
+  scan_id: number;
+  status: ScanStatus;
+  items: number;
+  error: string | null;
+}
+
+export type ItemView = "all_files" | "deleted" | "carved" | "everything";
+
+export interface ItemFilter {
+  view: ItemView;
+  search: string | null;
+}
+
+export interface ScanItemRow {
+  id: number;
+  path: string;
+  name: string;
+  size: number;
+  is_dir: boolean;
+  is_deleted: boolean;
+  name_complete: boolean;
+  origin: "metadata" | "carved";
+  extent_quality: "exact" | "contiguity_assumed" | "partial" | "unknown";
+  filesystem: string | null;
+  file_type: string | null;
+  modified_at: number | null;
+  data_state: "present" | "erased" | "unknown";
+  carve_status: "complete" | "unverified" | "partial" | null;
+  note: string | null;
+}
+
+export interface ItemPage {
+  items: ScanItemRow[];
+  total: number;
+}
+
+export interface ItemStats {
+  files: number;
+  deleted: number;
+  erased: number;
+  carved: number;
+  carved_complete: number;
+  total_bytes: number;
+}
+
 export type SettingKey = "theme" | "allow_same_disk_recovery" | "last_destination";

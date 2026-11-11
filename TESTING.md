@@ -1,5 +1,24 @@
 # Khodz Recovery — Testing Strategy
 
+## Stage 5 additions (Windows 11 x64, 2026-11-11)
+
+| Suite | Result |
+|---|---|
+| `cargo test -p khodz-carve --test carving` (spec-built JPEG/PNG/GIF/ZIP/DOCX/PDF/MP4/BMP/WAV in noise; **fragmentation honesty**: 5 formats × noise / zero / other-file gaps; truncation; CRC corruption; GIF LZW round trip; magic-in-noise rejection; skip + cancel; hostile sizes) | 8 passed |
+| `cargo test -p khodz-carve --test encoder_fixture -- --ignored` (System.Drawing JPEG/PNG/GIF/BMP, deflate ZIP, Office package, fragmented & truncated copies) | 1 passed: 5 complete byte-exact, BMP unverified, 5 broken copies never complete, image unchanged |
+| `cargo test -p khodz-engine -- --include-ignored` (blank media, cancel, sink errors, quick scan of the multi-volume Windows image, no duplicates in deep scan, deep scan of raw media) | 6 passed |
+| `cargo test -p khodz-db` (adds schema v2 upgrade from populated v1, item insert/list/filter/search with LIKE escaping, stats, extents round-trip, CHECK rollback, cascade delete, paging) | 22 passed |
+| `cargo test -p khodz-recovery -- --include-ignored` (adds scan persistence, cancelled status, no record for unopenable sources, throttled progress) | 14 passed |
+| `npm test` (adds scan dialog from Drives/Disk Images, Results page stats/filters/search/progress/cancel/start errors, status labelling) | 37 passed |
+| clippy `-D warnings` workspace + 7 engine crates for `{aarch64,x86_64}-apple-darwin` | clean |
+
+Fixture generator (no admin): `fixtures/windows/make-carving-fixture.ps1`.
+
+**Regression that found a real bug:** the fragmentation test showed a GIF with another file
+spliced in was reported complete by a block-structure check; GIF validation now runs a full
+LZW decode check. The same suite proves zero-filled gaps (TRIM) and noise never yield
+"complete" for JPEG, PNG, GIF, ZIP or PDF.
+
 ## Stage 4 additions (Windows 11 x64, 2026-11-11)
 
 | Suite | Result |

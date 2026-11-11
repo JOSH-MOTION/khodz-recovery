@@ -4,6 +4,7 @@
 //! history and user settings. It never stores file *contents* from scanned media.
 
 mod error;
+mod items;
 mod migrations;
 pub mod models;
 mod recoveries;
@@ -16,6 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::Connection;
 
 pub use error::{DbError, DbResult};
+pub use items::{ItemExtent, ItemFilter, ItemStats, ItemView, NewScanItem, ScanItemDetail, ScanItemRow};
 pub use models::*;
 
 /// Handle to the application database. Not `Sync`; wrap in a `Mutex` to share.

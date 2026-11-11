@@ -5,6 +5,7 @@ import type { FingerprintResult, ImageAnalysis, ImageInfo, JobProgress } from ".
 import { Button, Card, EmptyState, ErrorBanner, PageHeader } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { VolumeLayout } from "../components/VolumeLayout";
+import { ScanDialog } from "../components/ScanDialog";
 
 type Analysis = { status: "loading" } | { status: "ready"; data: ImageAnalysis } | { status: "error"; message: string };
 
@@ -88,6 +89,7 @@ function ImageCard({
 }) {
   const latest = useRef<Job>(job);
   latest.current = job;
+  const [scanning, setScanning] = useState(false);
 
   async function fingerprint() {
     const id = newJobId();
@@ -161,9 +163,16 @@ function ImageCard({
       </div>
 
       <div className="flex justify-end border-t border-line px-5 py-3">
-        <Button variant="primary" icon="scan" disabled title="Scanning arrives in Stage 5">
+        <Button variant="primary" icon="scan" onClick={() => setScanning(true)}>
           Scan image
         </Button>
+        {scanning && (
+          <ScanDialog
+            source={{ kind: "image", path: image.path }}
+            label={image.file_name}
+            onClose={() => setScanning(false)}
+          />
+        )}
       </div>
     </Card>
   );

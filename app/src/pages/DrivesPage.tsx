@@ -5,6 +5,7 @@ import type { BusType, PhysicalDisk, Volume } from "../lib/types";
 import { useAsync } from "../lib/useAsync";
 import { Button, Card, EmptyState, ErrorBanner, PageHeader } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { ScanDialog } from "../components/ScanDialog";
 
 const BUS_LABEL: Record<BusType, string> = {
   usb: "USB",
@@ -108,6 +109,7 @@ function Chip({ children, tone = "neutral", title }: { children: string; tone?: 
 
 function DriveCard({ disk, selected, onSelect }: { disk: PhysicalDisk; selected: boolean; onSelect: () => void }) {
   const external = isExternal(disk);
+  const [scanning, setScanning] = useState(false);
   return (
     <Card
       className={`flex flex-col transition-[box-shadow,border-color] ${
@@ -162,9 +164,22 @@ function DriveCard({ disk, selected, onSelect }: { disk: PhysicalDisk; selected:
         <div className="selectable min-w-0 truncate font-mono text-[11.5px] text-muted" title={disk.device_path}>
           {disk.device_path} · {disk.logical_sector_size} B sectors
         </div>
-        <Button variant="primary" icon="scan" disabled title="Scanning arrives in Stage 5">
+        <Button
+          variant="primary"
+          icon="scan"
+          disabled={!disk.media_present}
+          title="Reading a drive directly requires running Khodz Recovery as administrator"
+          onClick={() => setScanning(true)}
+        >
           Scan
         </Button>
+        {scanning && (
+          <ScanDialog
+            source={{ kind: "device", path: disk.device_path, label: disk.display_name }}
+            label={disk.display_name}
+            onClose={() => setScanning(false)}
+          />
+        )}
       </div>
     </Card>
   );
