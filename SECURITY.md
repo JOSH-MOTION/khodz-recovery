@@ -17,6 +17,14 @@
 4. **No OS security bypass.** Elevation uses the platform mechanism (UAC prompt / macOS
    authorization + privileged helper). We do not disable SIP, TCC, or Defender.
 
+## Device discovery (Stage 2)
+
+Listing drives never opens a device for reading. On Windows every handle is opened with
+`dwDesiredAccess = 0` and only `FILE_ANY_ACCESS` IOCTLs are issued; a unit test pins the access
+constant at zero. On macOS only `diskutil … -plist` metadata queries run, with device ids
+validated as `disk[0-9a-z]+` before being passed to the command. No elevation is requested.
+`unsafe` is confined to `crates/khodz-device/src/windows.rs` (FFI), with a SAFETY note per block.
+
 ## Privilege design
 
 - The UI process runs unprivileged.

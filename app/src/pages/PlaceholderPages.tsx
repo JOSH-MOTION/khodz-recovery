@@ -3,26 +3,6 @@ import { Button, EmptyState, PageHeader } from "../components/ui";
 // These pages intentionally show no data: their engines are not implemented yet, and the product
 // never displays simulated drives or results. Each says which stage delivers it.
 
-export function DrivesPage() {
-  return (
-    <>
-      <PageHeader
-        title="Drives"
-        subtitle="Choose a drive or partition to scan for lost files."
-        actions={
-          <Button icon="refresh" disabled title="Drive detection is not available in this build">
-            Refresh
-          </Button>
-        }
-      />
-      <EmptyState icon="drive" title="Drive detection isn't available yet" badge="Stage 2">
-        Physical drive and volume discovery for Windows and macOS is the next milestone. Until then, no drives
-        are listed — Khodz Recovery never shows placeholder devices.
-      </EmptyState>
-    </>
-  );
-}
-
 export function ImagesPage() {
   return (
     <>

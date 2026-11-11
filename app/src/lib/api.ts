@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppInfo, CommandError, Page, Recovery, Scan, SettingKey } from "./types";
+import type { AppInfo, CommandError, Page, PhysicalDisk, Recovery, Scan, SettingKey } from "./types";
 
 /** Typed wrappers over Tauri commands. The only module that calls `invoke`. */
 export const api = {
@@ -8,6 +8,7 @@ export const api = {
   setSetting: (key: SettingKey, value: string) => invoke<void>("set_setting", { key, value }),
   listScans: (page?: Page) => invoke<Scan[]>("list_scans", { page }),
   listRecoveries: (page?: Page) => invoke<Recovery[]>("list_recoveries", { page }),
+  listDevices: () => invoke<PhysicalDisk[]>("list_devices"),
 };
 
 export function errorMessage(err: unknown): string {

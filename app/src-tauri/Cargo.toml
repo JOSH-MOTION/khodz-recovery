@@ -15,6 +15,7 @@ crate-type = ["rlib"]
 [dependencies]
 khodz-core = { path = "../../crates/khodz-core" }
 khodz-db = { path = "../../crates/khodz-db" }
+khodz-device = { path = "../../crates/khodz-device" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tauri = { version = "2.11.6", features = [] }

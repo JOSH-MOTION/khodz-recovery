@@ -1,0 +1,28 @@
+[package]
+name = "khodz-device"
+description = "Physical disk and volume discovery (Windows and macOS) for Khodz Recovery"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+khodz-core = { path = "../khodz-core" }
+serde = { version = "1.0.229", features = ["derive"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Diagnostics_Debug",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+plist = "1"
+
+[dev-dependencies]
+plist = "1"

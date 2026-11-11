@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Sidebar, type Route } from "./components/Sidebar";
 import { HistoryPage } from "./pages/HistoryPage";
-import { DrivesPage, ImagesPage, RecoveryPage, ResultsPage } from "./pages/PlaceholderPages";
+import { DrivesPage } from "./pages/DrivesPage";
+import { ImagesPage, RecoveryPage, ResultsPage } from "./pages/PlaceholderPages";
 import { SettingsPage } from "./pages/SettingsPage";
 import { useTheme } from "./lib/theme";
 

@@ -1634,11 +1634,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "khodz-device"
+version = "0.1.0"
+dependencies = [
+ "khodz-core",
+ "plist",
+ "serde",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "khodz-recovery"
 version = "0.1.0"
 dependencies = [
  "khodz-core",
  "khodz-db",
+ "khodz-device",
  "serde",
  "serde_json",
  "tauri",

@@ -26,7 +26,7 @@ Vite 8.3, Tailwind 4.3, TypeScript 7.0, Vitest 5.1.
 |---|---|---|---|
 | 0 | Audit + docs | This file and the four companion docs exist | ☑ |
 | 1 | Foundation | Cargo workspace builds; `khodz-core`, `khodz-db` with migrations + unit tests; Tauri 2 app launches; React shell with sidebar nav (Drives, Disk Images, Results, Recovery, History, Settings), dark/light/system theme, Tailwind tokens; `cargo test` + `npm test` + `tsc --noEmit` green on Windows | ☑ Windows (2026-11-11) · macOS unverified |
-| 2 | Device discovery | Lists physical disks + volumes with size/model/bus/removable on Windows; macOS module compiles and is tested in CI; UI drive cards from real data (no mocks) | ☐ |
+| 2 | Device discovery | Lists physical disks + volumes with size/model/bus/removable on Windows; macOS module compiles and is tested in CI; UI drive cards from real data (no mocks) | ☑ Windows (2026-11-11) · macOS: parser unit-tested + cross-compiled, **not yet run on a Mac** |
 | 3 | Read-only access + images | `BlockSource` for images, Windows drives, macOS rdisk; bounded cache; cancellation; disconnect → `DeviceLost`; source-unchanged hash test | ☐ |
 | 4 | Partitions + FS parsing | MBR/GPT; probe+walk for FAT32, exFAT, NTFS, HFS+, APFS (live files); fixture images per FS | ☐ |
 | 5 | Quick + deep scan | Deleted-entry discovery (NTFS, FAT32, exFAT first); carving for JPEG/PNG/GIF/PDF/ZIP-family/MP4/MOV/MP3/WAV with validators; fragmentation honesty tests | ☐ |
@@ -36,6 +36,33 @@ Vite 8.3, Tailwind 4.3, TypeScript 7.0, Vitest 5.1.
 | 9 | Installers + CI matrix | MSI/NSIS on Windows; `.dmg` on macOS (unsigned unless credentials supplied); GitHub Actions matrix running the full regression suite | ☐ |
 
 Each stage: implement → run tests → fix → update docs → only then continue.
+
+## Stage 2 — delivered
+
+- `crates/khodz-device`: `list_disks()` → physical disks (display name, model, vendor, serial,
+  size, logical/physical sector size, bus, removable, system, virtual, SSD, media present) with
+  their volumes (mount points, label, filesystem, size, free, on-disk offset, encryption when
+  known, system flag, spanned flag).
+- **Windows:** probes `\\.\PhysicalDrive0..63` and `FindFirstVolumeW`; all handles opened with
+  **zero access rights** using only `FILE_ANY_ACCESS` IOCTLs, so no elevation is needed and no
+  data can be read or written. IOCTL output is parsed from raw bytes by bounds-checked pure
+  functions (unit-tested on every OS). Critical-error dialogs suppressed for empty card readers.
+- **macOS:** `diskutil list -plist` + `diskutil info -plist` (decision: Apple-supported, gives
+  APFS container→physical store mapping, no privileges, no `unsafe`). Synthesized APFS container
+  disks are folded into the physical disk holding the store.
+- UI: drive cards with bus/system/removable/SSD badges, proportional partition map, per-volume
+  usage; refresh button and re-enumeration on window focus (hot-plug). Scan stays disabled.
+
+Verified on this machine against `Get-Disk`/`Get-Volume`: 3 disks (SATA system SSD, USB HDD,
+USB stick), all 5 visible volumes plus the hidden EFI partition, sizes exact to the byte.
+
+Known limitations (documented, not hidden):
+- BitLocker status is not reported on Windows yet (`encrypted = null`); needs WMI or elevation.
+- Partition scheme on Windows is left empty until Stage 4 parses MBR/GPT itself (the OS layout
+  IOCTL needs read access).
+- macOS fixtures are hand-written from documented `diskutil` keys and must be checked against
+  real output on a Mac before macOS is marked verified.
+- No push notifications for hot-plug; the list refreshes on Refresh or window focus.
 
 ## Stage 1 — delivered
 

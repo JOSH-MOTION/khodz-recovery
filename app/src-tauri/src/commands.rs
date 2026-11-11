@@ -33,7 +33,33 @@ impl From<DbError> for CommandError {
     }
 }
 
+impl From<khodz_core::Error> for CommandError {
+    fn from(e: khodz_core::Error) -> Self {
+        use khodz_core::Error as E;
+        let kind = match e {
+            E::Io(_) => "io",
+            E::Cancelled => "cancelled",
+            E::DeviceLost(_) => "device_lost",
+            E::AccessDenied(_) => "access_denied",
+            E::InvalidData(_) => "invalid_data",
+            E::Unsupported(_) => "unsupported",
+            E::UnsafeDestination(_) => "unsafe_destination",
+        };
+        Self { kind, message: e.to_string() }
+    }
+}
+
 type CmdResult<T> = Result<T, CommandError>;
+
+/// Enumerate disks and volumes. Runs on a blocking worker thread: on macOS it spawns
+/// `diskutil`, and on Windows slow USB bridges can take a moment to answer IOCTLs.
+#[tauri::command]
+pub async fn list_devices() -> CmdResult<Vec<khodz_device::PhysicalDisk>> {
+    tauri::async_runtime::spawn_blocking(khodz_device::list_disks)
+        .await
+        .map_err(|e| CommandError::internal(format!("device enumeration task failed: {e}")))?
+        .map_err(CommandError::from)
+}
 
 #[derive(Debug, Serialize)]
 pub struct AppInfo {
@@ -106,6 +132,14 @@ mod tests {
         assert_eq!(err.kind, "invalid_request");
         let err: CommandError = s.db().unwrap().get_scan(7).unwrap_err().into();
         assert_eq!(err.kind, "not_found");
+    }
+
+    #[test]
+    fn engine_errors_map_to_stable_kinds() {
+        let e: CommandError = khodz_core::Error::AccessDenied("x".into()).into();
+        assert_eq!(e.kind, "access_denied");
+        let e: CommandError = khodz_core::Error::Unsupported("x".into()).into();
+        assert_eq!(e.kind, "unsupported");
     }
 
     #[test]

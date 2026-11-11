@@ -29,6 +29,7 @@ pub fn run() {
             commands::set_setting,
             commands::list_scans,
             commands::list_recoveries,
+            commands::list_devices,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start Khodz Recovery");

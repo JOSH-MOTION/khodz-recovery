@@ -1,19 +1,26 @@
 # Khodz Recovery — Testing Strategy
 
-## Current results (Stage 1, Windows 11 x64, 2026-11-11)
+## Current results (through Stage 2, Windows 11 x64, 2026-11-11)
 
 | Suite | Result |
 |---|---|
 | `cargo test -p khodz-core` | 9 passed |
 | `cargo test -p khodz-db` | 18 passed |
-| `cargo test -p khodz-recovery` (Tauri commands) | 3 passed |
+| `cargo test -p khodz-device` (unit: IOCTL parsers, volume assembly, macOS plist parser) | 18 passed |
+| `cargo test -p khodz-device --test real_hardware` (this PC's real disks, not elevated) | 3 passed |
+| `cargo test -p khodz-recovery` (Tauri commands) | 4 passed |
 | `cargo clippy --workspace --all-targets -- -D warnings` | clean |
+| `cargo clippy -p khodz-device -p khodz-core --target {aarch64,x86_64}-apple-darwin` | clean (compile only) |
 | `cargo fmt --all --check` | clean |
 | `npm run typecheck` | clean |
-| `npm test` (Vitest) | 13 passed |
-| Manual smoke via Windows UI Automation on the real app | Launch OK; navigation OK; About shows real backend data; theme change persists to SQLite and survives restart; native title bar follows theme |
+| `npm test` (Vitest) | 20 passed |
+| Real app via Windows UI Automation | Drives page lists all 3 real disks and their volumes, matching `Get-Disk`/`Get-Volume`; both themes checked |
 
-Not yet run: anything on macOS; any disk/recovery test (no engine exists yet). The frontend tests
+Not yet run: anything *on* macOS (needs a Mac or CI runner; `khodz-db` cannot be cross-checked
+from Windows because bundled SQLite needs Apple's C toolchain); any disk-reading or recovery
+test (no I/O engine exists yet).
+
+Manual device check: `cargo run -p khodz-device --example list_devices`. The frontend tests
 mock only the IPC boundary (`src/lib/api.ts`), never scan or recovery data in production code.
 
 ## Layers

@@ -24,6 +24,7 @@ vi.mock("../lib/api", async (importOriginal) => {
       setSetting: vi.fn(async (k: string, v: string) => void settings.set(k, v)),
       listScans: vi.fn(async () => scans),
       listRecoveries: vi.fn(async () => []),
+      listDevices: vi.fn(async () => []),
     },
   };
 });
@@ -38,11 +39,11 @@ beforeEach(() => {
 });
 
 describe("App shell", () => {
-  it("starts on Drives and shows no fabricated devices", () => {
+  it("starts on Drives and lists only what the backend reports", async () => {
     render(<App />);
     expect(screen.getByRole("heading", { level: 1, name: "Drives" })).toBeInTheDocument();
-    expect(screen.getByText("Drive detection isn't available yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled();
+    expect(await screen.findByText("No drives found")).toBeInTheDocument();
+    expect(api.listDevices).toHaveBeenCalled();
   });
 
   it("navigates between every section", async () => {

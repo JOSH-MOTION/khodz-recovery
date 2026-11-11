@@ -56,6 +56,25 @@ const PATHS = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  usb: (
+    <>
+      <rect x="7" y="9" width="10" height="12" rx="2" />
+      <path d="M9 9V3h6v6" />
+      <path d="M10.5 5.5h.01M13.5 5.5h.01" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect x="5" y="10.5" width="14" height="10" rx="2" />
+      <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
+    </>
+  ),
+  scan: (
+    <>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m20 20-4.4-4.4" />
+    </>
+  ),
   sun: (
     <>
       <circle cx="12" cy="12" r="4" />
