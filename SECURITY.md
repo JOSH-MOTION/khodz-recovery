@@ -25,6 +25,18 @@ constant at zero. On macOS only `diskutil … -plist` metadata queries run, with
 validated as `disk[0-9a-z]+` before being passed to the command. No elevation is requested.
 `unsafe` is confined to `crates/khodz-device/src/windows.rs` (FFI), with a SAFETY note per block.
 
+## Read-only storage access (Stage 3)
+
+- Images: `OpenOptions::new().read(true)` only — a test proves files with the OS read-only
+  attribute open, i.e. write access is never requested.
+- Raw devices: `GENERIC_READ` / `O_RDONLY` only, shared with the OS (never locked or
+  dismounted). Only paths matching `\\.\PhysicalDriveN`, `\\.\X:`, `\\?\Volume{…}` or
+  `/dev/[r]diskN…` are accepted, so the device opener cannot be pointed at arbitrary files.
+- Without elevation the OS refuses raw access and the app reports *access denied*; it never
+  tries to elevate itself.
+- `unsafe` additionally appears in `crates/khodz-io/src/device/{windows,macos}.rs` for the size
+  IOCTLs, each with a SAFETY note.
+
 ## Privilege design
 
 - The UI process runs unprivileged.

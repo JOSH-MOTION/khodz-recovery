@@ -27,7 +27,7 @@ Vite 8.3, Tailwind 4.3, TypeScript 7.0, Vitest 5.1.
 | 0 | Audit + docs | This file and the four companion docs exist | ☑ |
 | 1 | Foundation | Cargo workspace builds; `khodz-core`, `khodz-db` with migrations + unit tests; Tauri 2 app launches; React shell with sidebar nav (Drives, Disk Images, Results, Recovery, History, Settings), dark/light/system theme, Tailwind tokens; `cargo test` + `npm test` + `tsc --noEmit` green on Windows | ☑ Windows (2026-11-11) · macOS unverified |
 | 2 | Device discovery | Lists physical disks + volumes with size/model/bus/removable on Windows; macOS module compiles and is tested in CI; UI drive cards from real data (no mocks) | ☑ Windows (2026-11-11) · macOS: parser unit-tested + cross-compiled, **not yet run on a Mac** |
-| 3 | Read-only access + images | `BlockSource` for images, Windows drives, macOS rdisk; bounded cache; cancellation; disconnect → `DeviceLost`; source-unchanged hash test | ☐ |
+| 3 | Read-only access + images | `BlockSource` for images, Windows drives, macOS rdisk; bounded cache; cancellation; disconnect → `DeviceLost`; source-unchanged hash test | ☑ Windows images (2026-11-11) · raw-device reads: unelevated denial verified, elevated read **not yet run** · macOS: compiles only |
 | 4 | Partitions + FS parsing | MBR/GPT; probe+walk for FAT32, exFAT, NTFS, HFS+, APFS (live files); fixture images per FS | ☐ |
 | 5 | Quick + deep scan | Deleted-entry discovery (NTFS, FAT32, exFAT first); carving for JPEG/PNG/GIF/PDF/ZIP-family/MP4/MOV/MP3/WAV with validators; fragmentation honesty tests | ☐ |
 | 6 | Results explorer + preview | Virtualised tree/list from paged DB; filters; image/text/hex preview (preview reads ≤ 8 MiB) | ☐ |
@@ -36,6 +36,40 @@ Vite 8.3, Tailwind 4.3, TypeScript 7.0, Vitest 5.1.
 | 9 | Installers + CI matrix | MSI/NSIS on Windows; `.dmg` on macOS (unsigned unless credentials supplied); GitHub Actions matrix running the full regression suite | ☐ |
 
 Each stage: implement → run tests → fix → update docs → only then continue.
+
+## Stage 3 — delivered
+
+- `crates/khodz-io`: `BlockSource` trait (read-only by construction: no write method),
+  `ImageFile` (`OpenOptions::read(true)` only), `RawDevice` for Windows (`GENERIC_READ`, share
+  read/write, size via `IOCTL_DISK_GET_LENGTH_INFO`) and macOS (`O_RDONLY`, size via
+  `DKIOCGETBLOCK{SIZE,COUNT}`), with device-path validation so arbitrary files can't be opened
+  as devices.
+- Adapters: `AlignedSource` (unaligned reads over sector-aligned devices; bounce buffer capped
+  at 4 MiB), `SliceSource` (partition windows that cannot escape their bounds),
+  `CachedSource` (LRU, hard cap — default 64 MiB), `MemSource`.
+- Fault tolerance: OS errors classified as *media error* (bad sector → zero-fill, record, keep
+  going), *device lost* (abort), *access denied*. 1024 consecutive bad sectors are treated as a
+  lost device so a yanked drive can't stall a scan. `for_each_chunk` = bounded-memory pass with
+  cancellation and progress; `sha256_source` fingerprints a source and reports unreadable bytes.
+- App: Disk Images page — native file picker (`tauri-plugin-dialog`, `dialog:allow-open` only),
+  image details, SHA-256 fingerprint with streamed progress (Tauri channel, ≤10 Hz), throughput,
+  ETA, Cancel. Background jobs tracked by id in `AppState` with cancel tokens.
+- Dev profile now optimizes dependencies (`opt-level = 3`): SHA-256 in an unoptimized build ran
+  at 4.6 MiB/s, which made dev builds unrepresentative.
+
+Verified in the real app: a 256 MiB read-only image opened via the native dialog; the app's
+SHA-256 matched `Get-FileHash`; Cancel stopped a running fingerprint; the file's hash, mtime and
+read-only flag were unchanged afterwards. Throughput after the profile fix: 256 MiB in 4.1 s,
+on par with Windows' own `Get-FileHash` (3.9 s) on the same file (was 51.3 s).
+
+Not yet done / limitations:
+- **Elevation:** raw drive reads need Administrator (Windows) / root + Full Disk Access (macOS).
+  Without it the app reports "access denied" (verified). An elevated helper process is planned
+  before scanning live drives (Stage 5); until then live drives can be scanned only by running
+  the app elevated, and images need nothing.
+- The elevated raw-read test (`raw_device.rs`, `--ignored`) has not been run yet.
+- Only raw images; E01/AFF, compressed DMG, VHD/VHDX are not supported.
+- Image sector size is assumed 512 until Stage 4 detects it from GPT/filesystem headers.
 
 ## Stage 2 — delivered
 

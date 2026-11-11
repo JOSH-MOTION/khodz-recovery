@@ -1,27 +1,7 @@
-import { Button, EmptyState, PageHeader } from "../components/ui";
+import { EmptyState, PageHeader } from "../components/ui";
 
 // These pages intentionally show no data: their engines are not implemented yet, and the product
 // never displays simulated drives or results. Each says which stage delivers it.
-
-export function ImagesPage() {
-  return (
-    <>
-      <PageHeader
-        title="Disk Images"
-        subtitle="Scan a raw disk image (.img, .dd, .bin) instead of a live drive."
-        actions={
-          <Button variant="primary" icon="plus" disabled title="Image scanning is not available in this build">
-            Open image
-          </Button>
-        }
-      />
-      <EmptyState icon="image" title="Image scanning isn't available yet" badge="Stage 3">
-        Imaging a failing drive first and scanning the image is the safest way to recover data. Read-only image
-        access arrives with the storage layer.
-      </EmptyState>
-    </>
-  );
-}
 
 export function ResultsPage() {
   return (

@@ -16,9 +16,14 @@ crate-type = ["rlib"]
 khodz-core = { path = "../../crates/khodz-core" }
 khodz-db = { path = "../../crates/khodz-db" }
 khodz-device = { path = "../../crates/khodz-device" }
+khodz-io = { version = "0.1.0", path = "../../crates/khodz-io" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tauri = { version = "2.11.6", features = [] }
+tauri-plugin-dialog = "2.7.3"
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

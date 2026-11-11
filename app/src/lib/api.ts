@@ -1,5 +1,20 @@
-import { invoke } from "@tauri-apps/api/core";
-import type { AppInfo, CommandError, Page, PhysicalDisk, Recovery, Scan, SettingKey } from "./types";
+import { Channel, invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import type {
+  AppInfo,
+  CommandError,
+  FingerprintResult,
+  ImageInfo,
+  JobProgress,
+  Page,
+  PhysicalDisk,
+  Recovery,
+  Scan,
+  SettingKey,
+} from "./types";
+
+/** Raw (sector-for-sector) image extensions. Compressed/container formats are not supported. */
+export const IMAGE_EXTENSIONS = ["img", "dd", "raw", "bin", "ima", "001"];
 
 /** Typed wrappers over Tauri commands. The only module that calls `invoke`. */
 export const api = {
@@ -9,6 +24,27 @@ export const api = {
   listScans: (page?: Page) => invoke<Scan[]>("list_scans", { page }),
   listRecoveries: (page?: Page) => invoke<Recovery[]>("list_recoveries", { page }),
   listDevices: () => invoke<PhysicalDisk[]>("list_devices"),
+
+  /** Native "open file" dialog. Resolves to null if the user cancels. */
+  pickImageFile: async (): Promise<string | null> => {
+    const picked = await open({
+      title: "Open disk image",
+      multiple: false,
+      directory: false,
+      filters: [
+        { name: "Raw disk images", extensions: IMAGE_EXTENSIONS },
+        { name: "All files", extensions: ["*"] },
+      ],
+    });
+    return typeof picked === "string" ? picked : null;
+  },
+  inspectImage: (path: string) => invoke<ImageInfo>("inspect_image", { path }),
+  fingerprintImage: (path: string, jobId: string, onProgress: (p: JobProgress) => void) => {
+    const channel = new Channel<JobProgress>();
+    channel.onmessage = onProgress;
+    return invoke<FingerprintResult>("fingerprint_image", { path, jobId, onProgress: channel });
+  },
+  cancelJob: (jobId: string) => invoke<boolean>("cancel_job", { jobId }),
 };
 
 export function errorMessage(err: unknown): string {
@@ -16,4 +52,8 @@ export function errorMessage(err: unknown): string {
     return String((err as CommandError).message);
   }
   return String(err);
+}
+
+export function errorKind(err: unknown): string | null {
+  return err && typeof err === "object" && "kind" in err ? String((err as CommandError).kind) : null;
 }

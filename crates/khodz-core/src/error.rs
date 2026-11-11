@@ -11,6 +11,9 @@ pub enum Error {
     Cancelled,
     /// The source device disappeared or stopped responding mid-operation.
     DeviceLost(String),
+    /// The medium could not return data for a range (bad sector, CRC error). The device is still
+    /// present; callers may skip the range and continue.
+    MediaError { offset: u64, detail: String },
     /// The OS refused access (missing elevation, Full Disk Access, locked volume, …).
     AccessDenied(String),
     /// On-disk data failed validation (corrupt structure, out-of-range value, …).
@@ -27,6 +30,7 @@ impl fmt::Display for Error {
             Error::Io(e) => write!(f, "I/O error: {e}"),
             Error::Cancelled => f.write_str("operation cancelled"),
             Error::DeviceLost(d) => write!(f, "device disconnected or unreadable: {d}"),
+            Error::MediaError { offset, detail } => write!(f, "unreadable data at byte {offset}: {detail}"),
             Error::AccessDenied(d) => write!(f, "access denied: {d}"),
             Error::InvalidData(d) => write!(f, "invalid data: {d}"),
             Error::Unsupported(d) => write!(f, "unsupported: {d}"),

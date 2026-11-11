@@ -1,0 +1,23 @@
+[package]
+name = "khodz-io"
+description = "Read-only block access to disks, volumes and disk images for Khodz Recovery"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+khodz-core = { path = "../khodz-core" }
+sha2 = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_IO"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+sha2 = "0.10"
+tempfile = "3.27.0"

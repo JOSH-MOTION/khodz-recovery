@@ -1,6 +1,33 @@
 # Khodz Recovery — Testing Strategy
 
-## Current results (through Stage 2, Windows 11 x64, 2026-11-11)
+## Stage 3 additions (Windows 11 x64, 2026-11-11)
+
+| Suite | Result |
+|---|---|
+| `cargo test -p khodz-io` unit (error classification, device-path validation) | 3 passed |
+| `cargo test -p khodz-io --test image_and_adapters` | 14 passed |
+| `cargo test -p khodz-io --test raw_device` | 2 passed, 1 ignored (needs elevation) |
+| `cargo test -p khodz-recovery` (adds image inspect/fingerprint/cancel, job table) | 9 passed |
+| `npm test` (adds Disk Images page) | 27 passed |
+| clippy `-D warnings` on Windows + `{aarch64,x86_64}-apple-darwin` (io/device/core) | clean |
+
+What the I/O suite proves (synthetic media, generated per test, never committed):
+- **Source unchanged:** SHA-256, mtime and size of the image file identical before/after 500
+  random reads, a full chunked pass and a fingerprint.
+- **Never requests write access:** a file with the OS read-only attribute opens and reads.
+- **Exact reads:** 500 random offset/length reads incl. across and past EOF; 8 threads in parallel.
+- **Alignment:** 2,000 random unaligned reads through `AlignedSource` over a source that panics on
+  any unaligned access, at 512 and 4096-byte sectors.
+- **Bad sectors:** zero-filled, reported as merged ranges, good sectors intact; fingerprints
+  report unreadable bytes. **Disconnect:** pass aborts with `DeviceLost` at the right offset;
+  a run of 1024+ failures is also treated as device loss.
+- **Cancellation** between chunks; **progress** monotonic and complete; **cache** never exceeds
+  its bound and serves repeat reads without touching the source.
+
+Run the elevated raw-device test (prompts for admin):
+`KHODZ_TEST_DEVICE=\\.\PhysicalDrive2 cargo test -p khodz-io --test raw_device -- --ignored`
+
+## Results through Stage 2, Windows 11 x64, 2026-11-11
 
 | Suite | Result |
 |---|---|

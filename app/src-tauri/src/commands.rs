@@ -40,6 +40,7 @@ impl From<khodz_core::Error> for CommandError {
             E::Io(_) => "io",
             E::Cancelled => "cancelled",
             E::DeviceLost(_) => "device_lost",
+            E::MediaError { .. } => "media_error",
             E::AccessDenied(_) => "access_denied",
             E::InvalidData(_) => "invalid_data",
             E::Unsupported(_) => "unsupported",
@@ -109,12 +110,10 @@ pub fn list_recoveries(state: State<'_, AppState>, page: Option<Page>) -> CmdRes
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use super::*;
 
     fn state() -> AppState {
-        AppState { db: Mutex::new(khodz_db::Database::open_in_memory().unwrap()), db_path: "memory".into() }
+        AppState::new(khodz_db::Database::open_in_memory().unwrap(), "memory".into())
     }
 
     #[test]

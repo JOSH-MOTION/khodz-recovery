@@ -111,4 +111,27 @@ export interface PhysicalDisk {
   volumes: Volume[];
 }
 
+// Mirrors app/src-tauri/src/images.rs
+export interface ImageInfo {
+  path: string;
+  file_name: string;
+  size_bytes: number;
+  sector_size: number;
+  modified_ms: number | null;
+  file_read_only: boolean;
+}
+
+export interface JobProgress {
+  bytes_done: number;
+  bytes_total: number;
+}
+
+export interface FingerprintResult {
+  sha256: string;
+  bytes: number;
+  unreadable_bytes: number;
+  unreadable_ranges: [number, number][];
+  elapsed_ms: number;
+}
+
 export type SettingKey = "theme" | "allow_same_disk_recovery" | "last_destination";

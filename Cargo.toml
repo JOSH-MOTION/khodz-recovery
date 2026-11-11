@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/khodz-core", "crates/khodz-db", "crates/khodz-device", "app/src-tauri"]
+members = ["crates/khodz-core", "crates/khodz-db", "crates/khodz-device", "crates/khodz-io","app/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,6 +13,11 @@ unsafe_code = "deny"
 
 [workspace.lints.clippy]
 arithmetic_side_effects = "warn"
+
+# Dependencies (hashing, SQLite, compression) are ~100x slower unoptimized, which makes dev builds
+# unrepresentative for multi-GB disks. Optimize them always; our own crates keep fast debug builds.
+[profile.dev.package."*"]
+opt-level = 3
 
 [profile.release]
 lto = "thin"
