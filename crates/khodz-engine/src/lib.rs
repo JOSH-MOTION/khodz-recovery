@@ -115,6 +115,57 @@ pub struct ScanSummary {
     pub carve: Option<CarveStats>,
 }
 
+/// Read up to `len` bytes at logical `offset` of an item by following its extents (sparse runs
+/// read as zeros; resident data is used directly). Stops early if the extents end before the
+/// item's size, so a partial item returns only what is actually located.
+pub fn read_item_range<S: BlockSource + ?Sized>(
+    src: &S,
+    extents: &[AbsExtent],
+    resident: Option<&[u8]>,
+    size: u64,
+    offset: u64,
+    len: usize,
+) -> Result<Vec<u8>> {
+    let end = size.min(offset.saturating_add(len as u64));
+    if offset >= end {
+        return Ok(Vec::new());
+    }
+    if let Some(r) = resident {
+        let s = usize::try_from(offset).unwrap_or(usize::MAX).min(r.len());
+        let e = usize::try_from(end).unwrap_or(usize::MAX).min(r.len());
+        return Ok(r[s..e].to_vec());
+    }
+    let mut out = Vec::with_capacity(usize::try_from(end.saturating_sub(offset)).unwrap_or(0));
+    let mut logical = 0u64;
+    for ext in extents {
+        let ext_end = logical.saturating_add(ext.len);
+        let from = offset.max(logical);
+        let to = end.min(ext_end);
+        if from < to {
+            // Extents must be contiguous in logical space: a gap means data we do not have.
+            if from != offset.saturating_add(out.len() as u64) {
+                break;
+            }
+            let n = usize::try_from(to.saturating_sub(from)).unwrap_or(0);
+            let start = out.len();
+            out.resize(start.saturating_add(n), 0);
+            if let Some(abs) = ext.offset {
+                let got =
+                    src.read_exact_at(abs.saturating_add(from.saturating_sub(logical)), &mut out[start..])?;
+                if got < n {
+                    out.truncate(start.saturating_add(got));
+                    break;
+                }
+            }
+        }
+        logical = ext_end;
+        if logical >= end {
+            break;
+        }
+    }
+    Ok(out)
+}
+
 fn quality_str(q: ExtentQuality) -> &'static str {
     match q {
         ExtentQuality::Exact => "exact",

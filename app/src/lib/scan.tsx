@@ -48,7 +48,15 @@ export function ScanProvider({ children, onStarted }: { children: ReactNode; onS
           setActive((a) => (a && a.jobId === jobId ? { ...a, progress } : a)),
         )
         .then((outcome) => setLastOutcome(outcome))
-        .catch((e) => setLastError(errorMessage(e)))
+        .catch((e) => {
+          // Make the most common failure actionable instead of a dead end.
+          const kind = e && typeof e === "object" && "kind" in e ? String((e as { kind: unknown }).kind) : null;
+          setLastError(
+            kind === "access_denied" && source.kind === "device"
+              ? `${errorMessage(e)}. Windows only lets administrators read a drive directly: close Khodz Recovery, right-click it and choose "Run as administrator", then scan again. Disk images need no special rights.`
+              : errorMessage(e),
+          );
+        })
         .finally(() => setActive((a) => (a && a.jobId === jobId ? null : a)));
     },
     [onStarted],

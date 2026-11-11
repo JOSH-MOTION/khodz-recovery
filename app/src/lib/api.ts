@@ -6,9 +6,14 @@ import type {
   FingerprintResult,
   ImageAnalysis,
   ImageInfo,
+  FolderListing,
   ItemFilter,
   ItemPage,
   ItemStats,
+  ItemView,
+  ScanItemDetail,
+  ScanVolume,
+  Scope,
   ScanOutcome,
   ScanProgress,
   ScanSource,
@@ -61,6 +66,15 @@ export const api = {
   listScanItems: (scanId: number, filter: ItemFilter, page: Page) =>
     invoke<ItemPage>("list_scan_items", { scanId, filter, page }),
   scanItemStats: (scanId: number) => invoke<ItemStats>("scan_item_stats", { scanId }),
+  listVolumes: (scanId: number, view: ItemView) => invoke<ScanVolume[]>("list_volumes", { scanId, view }),
+  listFolder: (scanId: number, scope: Scope, dir: string, view: ItemView, page: Page) =>
+    invoke<FolderListing>("list_folder", { scanId, scope, dir, view, page }),
+  getScanItem: (id: number) => invoke<ScanItemDetail>("get_scan_item", { id }),
+  /** Raw bytes of an item (read-only, from the scanned source), as an ArrayBuffer. */
+  readItemData: async (itemId: number, offset: number, len: number): Promise<Uint8Array> => {
+    const buf = await invoke<ArrayBuffer | number[]>("read_item_data", { itemId, offset, len });
+    return buf instanceof ArrayBuffer ? new Uint8Array(buf) : Uint8Array.from(buf);
+  },
 };
 
 export function errorMessage(err: unknown): string {

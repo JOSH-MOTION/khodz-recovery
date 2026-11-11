@@ -30,12 +30,44 @@ Vite 8.3, Tailwind 4.3, TypeScript 7.0, Vitest 5.1.
 | 3 | Read-only access + images | `BlockSource` for images, Windows drives, macOS rdisk; bounded cache; cancellation; disconnect → `DeviceLost`; source-unchanged hash test | ☑ Windows images + raw devices (2026-11-11; elevated read verified on a USB stick, unelevated denial verified) · macOS: compiles only |
 | 4 | Partitions + FS parsing | MBR/GPT; probe+walk for FAT32, exFAT, NTFS, HFS+, APFS (live files); fixture images per FS | ◐ MBR/GPT + FAT32/exFAT/NTFS ☑ verified on Windows-built images (2026-11-11) · HFS+/APFS detection only — walking needs a Mac for fixtures |
 | 5 | Quick + deep scan | Deleted-entry discovery (NTFS, FAT32, exFAT first); carving for JPEG/PNG/GIF/PDF/ZIP-family/MP4/MOV/MP3/WAV with validators; fragmentation honesty tests | ☑ Windows, images (2026-11-11) · live-drive scans need the app run as Administrator (helper not built) · MP3 not carved |
-| 6 | Results explorer + preview | Virtualised tree/list from paged DB; filters; image/text/hex preview (preview reads ≤ 8 MiB) | ☐ |
+| 6 | Results explorer + preview | Virtualised tree/list from paged DB; filters; image/text/hex preview (preview reads ≤ 8 MiB) | ☑ Windows (2026-11-11) · paged rather than virtualised lists · image previews read ≤ 32 MiB |
 | 7 | Recovery + integrity | Destination validation incl. same-disk refusal; streaming copy + SHA-256 verify; manifest; recovery history | ☐ |
 | 8 | Partition analysis | Lost partition search, overlapping/conflicting table reporting, scan of found partitions | ☐ |
 | 9 | Installers + CI matrix | MSI/NSIS on Windows; `.dmg` on macOS (unsigned unless credentials supplied); GitHub Actions matrix running the full regression suite | ☐ |
 
 Each stage: implement → run tests → fix → update docs → only then continue.
+
+## Stage 6 — delivered
+
+- `khodz-db` schema v3: `scan_volumes` (filesystem, label, counts, per-volume error) stored at
+  the end of each scan; older scans fall back to grouping their items. Tree queries list the
+  sub-folders (with recursive file / deleted counts) and files of any folder per volume or for
+  signature results. They use path *range* conditions (`'/a/' ≤ path < '/a0'`) so the
+  `(scan_id, path)` index is used and `%`/`_` in real folder names need no escaping.
+- `khodz-engine::read_item_range`: reads any byte window of an item through its extents
+  (sparse runs → zeros, resident data, stops where a partial item's known extents end).
+- App: `read_item_data` returns raw bytes over IPC (≤ 32 MiB) after re-opening the source
+  read-only and refusing if its size changed since the scan; `list_volumes`, `list_folder`.
+- Explorer: Locations (volumes + "Found by signature"), breadcrumb, folders with counts, files
+  with status, keyboard navigation (↑/↓, Enter, Backspace), paging; opens wherever files are.
+  Search switches to a flat list across all folders.
+- Preview pane: images through the webview decoder (decode failure reported as likely damage;
+  for non-verified files the caption says missing parts render blank rather than claiming
+  success), text (UTF-8, first 256 KiB), hex (first 16 KiB), details (status, location
+  quality explained, timestamps, on-disk extents). Erased data gets a plain explanation.
+  SVG/HTML are shown as text only — recovered content is never rendered as markup or executed.
+- Access-denied on drive scans now tells the user how to proceed (run as administrator, or use
+  a disk image).
+
+Verified end to end: scanning the fixtures and reading every verified carved file and every
+live NTFS file back through the preview path reproduces the original SHA-256 (plus windowed
+reads). In the real app: a carved 800 × 600 JPEG previews correctly; a fragmented one shows the
+partial warning and the honest caption.
+
+Bugs found while verifying: carved names were truncated at exactly the part that distinguishes
+them (names now wrap); the explorer opened an empty "Unknown volume" for raw images and, due
+to a load-order race, could stay there (now opens where files are; regression test added);
+"decoded successfully" over-claimed for partial images (fixed, regression test added).
 
 ## Stage 5 — delivered
 

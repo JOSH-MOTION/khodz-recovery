@@ -10,6 +10,7 @@ pub mod models;
 mod recoveries;
 mod scans;
 mod settings;
+mod tree;
 
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -19,6 +20,7 @@ use rusqlite::Connection;
 pub use error::{DbError, DbResult};
 pub use items::{ItemExtent, ItemFilter, ItemStats, ItemView, NewScanItem, ScanItemDetail, ScanItemRow};
 pub use models::*;
+pub use tree::{FolderEntry, NewScanVolume, ScanVolume, Scope};
 
 /// Handle to the application database. Not `Sync`; wrap in a `Mutex` to share.
 pub struct Database {

@@ -57,6 +57,7 @@ pub struct ScanItemRow {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ScanItemDetail {
+    pub scan_id: i64,
     #[serde(flatten)]
     pub row: ScanItemRow,
     pub volume_offset: u64,
@@ -142,15 +143,26 @@ fn row(r: &Row<'_>) -> rusqlite::Result<ScanItemRow> {
     })
 }
 
+/// SQL condition (prefixed with " AND") selecting the items a view shows.
+pub(crate) fn view_condition(view: ItemView) -> &'static str {
+    match view {
+        ItemView::AllFiles => " AND is_dir = 0 AND is_system = 0",
+        ItemView::Deleted => " AND is_dir = 0 AND is_deleted = 1 AND origin = 'metadata'",
+        ItemView::Carved => " AND origin = 'carved'",
+        ItemView::Everything => "",
+    }
+}
+
+pub(crate) const ROW_SELECT: &str = ROW_COLUMNS;
+
+pub(crate) fn map_row(r: &Row<'_>) -> rusqlite::Result<ScanItemRow> {
+    row(r)
+}
+
 /// WHERE clause fragment and bound search pattern for a filter.
 fn where_clause(f: &ItemFilter) -> (String, Option<String>) {
     let mut w = String::from("scan_id = ?1");
-    match f.view {
-        ItemView::AllFiles => w.push_str(" AND is_dir = 0 AND is_system = 0"),
-        ItemView::Deleted => w.push_str(" AND is_dir = 0 AND is_deleted = 1 AND origin = 'metadata'"),
-        ItemView::Carved => w.push_str(" AND origin = 'carved'"),
-        ItemView::Everything => {}
-    }
+    w.push_str(view_condition(f.view));
     let pattern = f.search.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(|s| {
         // Escape LIKE wildcards so user input is matched literally.
         let esc = s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
@@ -260,10 +272,11 @@ impl Database {
     pub fn get_scan_item(&self, id: i64) -> DbResult<ScanItemDetail> {
         self.conn
             .query_row(
-                &format!("SELECT {ROW_COLUMNS}, volume_offset, extents, resident, created_at FROM scan_items WHERE id = ?1"),
+                &format!("SELECT {ROW_COLUMNS}, volume_offset, extents, resident, created_at, scan_id FROM scan_items WHERE id = ?1"),
                 [id],
                 |r| {
                     Ok(ScanItemDetail {
+                        scan_id: r.get(19)?,
                         row: row(r)?,
                         volume_offset: r.get::<_, i64>(15)?.max(0) as u64,
                         extents: r.get::<_, Option<Vec<u8>>>(16)?.as_deref().map(decode_extents).unwrap_or_default(),

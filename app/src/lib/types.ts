@@ -254,4 +254,38 @@ export interface ItemStats {
   total_bytes: number;
 }
 
+// Explorer (crates/khodz-db/src/tree.rs, app/src-tauri/src/scans.rs)
+export type Scope = { kind: "volume"; offset: number } | { kind: "carved" };
+
+export interface ScanVolume {
+  offset: number;
+  size: number | null;
+  filesystem: string;
+  label: string | null;
+  error: string | null;
+  files: number;
+  deleted: number;
+}
+
+export interface FolderEntry {
+  name: string;
+  path: string;
+  files: number;
+  deleted: number;
+}
+
+export interface FolderListing {
+  folders: FolderEntry[];
+  files: ScanItemRow[];
+  total_files: number;
+}
+
+export interface ScanItemDetail extends ScanItemRow {
+  scan_id: number;
+  volume_offset: number;
+  extents: [number | null, number][];
+  resident: number[] | null;
+  created_at: number | null;
+}
+
 export type SettingKey = "theme" | "allow_same_disk_recovery" | "last_destination";

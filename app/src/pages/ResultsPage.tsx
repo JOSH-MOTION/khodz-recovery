@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, errorMessage } from "../lib/api";
 import { formatBytes, formatDateTime, formatDuration } from "../lib/format";
+import { TONES, itemStatus } from "../lib/itemStatus";
 import { useScan } from "../lib/scan";
 import type { ItemStats, ItemView, Scan, ScanItemRow, ScanPhase } from "../lib/types";
 import { Button, Card, EmptyState, ErrorBanner, PageHeader, StatusPill } from "../components/ui";
+import { Explorer } from "../components/Explorer";
+import { PreviewPane } from "../components/PreviewPane";
+
+export { itemStatus } from "../lib/itemStatus";
 
 const PAGE = 200;
 
@@ -18,30 +23,6 @@ const VIEWS: { value: ItemView; label: string }[] = [
   { value: "deleted", label: "Deleted" },
   { value: "carved", label: "Found by signature" },
 ];
-
-type Tone = "ok" | "warn" | "danger" | "muted" | "accent";
-
-/** One honest label for what the scan knows about an item. */
-export function itemStatus(r: ScanItemRow): { text: string; tone: Tone; hint?: string } {
-  if (r.origin === "carved") {
-    if (r.carve_status === "complete") return { text: "Verified", tone: "ok", hint: "File structure checked end to end" };
-    if (r.carve_status === "unverified")
-      return { text: "Unverified", tone: "muted", hint: r.note ?? "Contents of this format cannot be verified" };
-    return { text: "Partial", tone: "warn", hint: r.note ?? "Only part of the file was found" };
-  }
-  if (!r.is_deleted) return { text: "Existing", tone: "accent" };
-  if (r.data_state === "erased") return { text: "Deleted · erased", tone: "danger", hint: r.note ?? "Data reads back as zeros" };
-  if (r.extent_quality === "partial") return { text: "Deleted · partial", tone: "warn", hint: "Location only partly known" };
-  return { text: "Deleted", tone: "warn", hint: r.extent_quality === "contiguity_assumed" ? "Contiguous storage assumed" : undefined };
-}
-
-const TONES: Record<Tone, string> = {
-  ok: "border-ok/40 bg-ok/10 text-ok",
-  warn: "border-warn/40 bg-warn/10 text-warn",
-  danger: "border-danger/40 bg-danger/10 text-danger",
-  muted: "border-line text-muted",
-  accent: "border-accent/40 bg-accent-soft text-accent",
-};
 
 function ProgressPanel() {
   const { active, cancel } = useScan();
@@ -90,6 +71,91 @@ function ProgressPanel() {
   );
 }
 
+/** Flat list used while searching (results can come from any folder or volume). */
+function SearchResults({
+  scanId,
+  view,
+  search,
+  selected,
+  onSelect,
+}: {
+  scanId: number;
+  view: ItemView;
+  search: string;
+  selected: ScanItemRow | null;
+  onSelect: (r: ScanItemRow) => void;
+}) {
+  const [items, setItems] = useState<ScanItemRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const filter = useMemo(() => ({ view, search }), [view, search]);
+
+  useEffect(() => {
+    let live = true;
+    api
+      .listScanItems(scanId, filter, { limit: PAGE, offset: 0 })
+      .then((p) => {
+        if (!live) return;
+        setItems(p.items);
+        setTotal(p.total);
+      })
+      .catch((e) => live && setError(errorMessage(e)));
+    return () => {
+      live = false;
+    };
+  }, [scanId, filter]);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface">
+      {error && <ErrorBanner message={error} />}
+      <div role="listbox" aria-label="Search results" className="min-h-0 flex-1 overflow-y-auto">
+        {items.map((r) => {
+          const st = itemStatus(r);
+          return (
+            <div
+              key={r.id}
+              role="option"
+              aria-selected={selected?.id === r.id}
+              onClick={() => onSelect(r)}
+              className={`flex cursor-default items-center gap-3 border-b border-line px-4 py-2 text-[13px] ${
+                selected?.id === r.id ? "bg-accent-soft" : "hover:bg-surface-2/60"
+              }`}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{r.name}</span>
+                <span className="block truncate text-[12px] text-muted">
+                  {r.origin === "carved" ? "Found by signature" : r.filesystem} · {r.path}
+                </span>
+              </span>
+              <span className="w-20 shrink-0 text-right text-[12px] tabular-nums text-muted">{formatBytes(r.size)}</span>
+              <span className={`w-32 shrink-0 truncate rounded-md border px-1.5 py-0.5 text-center text-[11px] font-medium ${TONES[st.tone]}`}>
+                {st.text}
+              </span>
+            </div>
+          );
+        })}
+        {items.length === 0 && !error && <p className="p-6 text-center text-[13px] text-muted">No files match.</p>}
+      </div>
+      <div className="flex items-center justify-between border-t border-line px-4 py-2 text-[12.5px] text-muted">
+        <span>
+          Showing {items.length.toLocaleString()} of {total.toLocaleString()}
+        </span>
+        {items.length < total && (
+          <Button
+            onClick={() =>
+              void api
+                .listScanItems(scanId, filter, { limit: PAGE, offset: items.length })
+                .then((p) => setItems((cur) => [...cur, ...p.items]))
+            }
+          >
+            Load more
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ResultsPage() {
   const { active, lastOutcome, lastError } = useScan();
   const [scans, setScans] = useState<Scan[]>([]);
@@ -97,12 +163,10 @@ export function ResultsPage() {
   const [view, setView] = useState<ItemView>("all_files");
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
-  const [items, setItems] = useState<ScanItemRow[]>([]);
-  const [total, setTotal] = useState(0);
   const [stats, setStats] = useState<ItemStats | null>(null);
+  const [selected, setSelected] = useState<ScanItemRow | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Reload the scan list whenever a scan finishes.
   useEffect(() => {
     api
       .listScans({ limit: 50, offset: 0 })
@@ -115,43 +179,25 @@ export function ResultsPage() {
   }, [lastOutcome, active]);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(search), 250);
+    const t = setTimeout(() => setDebounced(search.trim()), 250);
     return () => clearTimeout(t);
   }, [search]);
 
-  const filter = useMemo(() => ({ view, search: debounced.trim() || null }), [view, debounced]);
-
   useEffect(() => {
     if (scanId === null) return;
-    let live = true;
-    setError(null);
-    Promise.all([api.listScanItems(scanId, filter, { limit: PAGE, offset: 0 }), api.scanItemStats(scanId)])
-      .then(([page, s]) => {
-        if (!live) return;
-        setItems(page.items);
-        setTotal(page.total);
-        setStats(s);
-      })
-      .catch((e) => live && setError(errorMessage(e)));
-    return () => {
-      live = false;
-    };
-  }, [scanId, filter]);
-
-  const loadMore = () => {
-    if (scanId === null) return;
+    setSelected(null);
     api
-      .listScanItems(scanId, filter, { limit: PAGE, offset: items.length })
-      .then((page) => setItems((cur) => [...cur, ...page.items]))
+      .scanItemStats(scanId)
+      .then(setStats)
       .catch((e) => setError(errorMessage(e)));
-  };
+  }, [scanId]);
 
   const scan = scans.find((s) => s.id === scanId) ?? null;
 
   return (
-    <>
-      <PageHeader title="Results" subtitle="Files found by your scans. Nothing is written anywhere until you recover." />
-      <div className="flex flex-col gap-5 px-8 py-6">
+    <div className="flex h-full flex-col">
+      <PageHeader title="Results" subtitle="Browse and preview what your scans found. Nothing is written anywhere until you recover." />
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-8 py-5">
         <ProgressPanel />
         {lastError && <ErrorBanner message={lastError} />}
         {error && <ErrorBanner message={error} />}
@@ -183,24 +229,13 @@ export function ResultsPage() {
               </select>
               <StatusPill status={scan.status} />
               {scan.error && <span className="text-[12.5px] text-danger">{scan.error}</span>}
+              {stats && (
+                <span className="ml-auto text-[12.5px] text-muted tabular-nums">
+                  {stats.files.toLocaleString()} files · {stats.deleted.toLocaleString()} deleted ({stats.erased.toLocaleString()} erased) ·{" "}
+                  {stats.carved.toLocaleString()} by signature ({stats.carved_complete.toLocaleString()} verified)
+                </span>
+              )}
             </div>
-
-            {stats && (
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                {[
-                  ["Files", stats.files.toLocaleString(), formatBytes(stats.total_bytes)],
-                  ["Deleted (named)", stats.deleted.toLocaleString(), `${stats.erased.toLocaleString()} erased`],
-                  ["Found by signature", stats.carved.toLocaleString(), `${stats.carved_complete.toLocaleString()} verified`],
-                  ["Source", formatBytes(scan.source_size), scan.source_kind.replace("_", " ")],
-                ].map(([k, v, sub]) => (
-                  <Card key={k} className="px-4 py-3">
-                    <div className="text-[11.5px] tracking-wide text-muted uppercase">{k}</div>
-                    <div className="mt-1 text-[18px] font-semibold tabular-nums">{v}</div>
-                    <div className="text-[12px] text-muted">{sub}</div>
-                  </Card>
-                ))}
-              </div>
-            )}
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div role="tablist" aria-label="Result type" className="inline-flex rounded-lg border border-line bg-surface p-0.5">
@@ -210,7 +245,10 @@ export function ResultsPage() {
                     role="tab"
                     type="button"
                     aria-selected={view === v.value}
-                    onClick={() => setView(v.value)}
+                    onClick={() => {
+                      setView(v.value);
+                      setSelected(null);
+                    }}
                     className={`rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
                       view === v.value ? "bg-surface-2 text-fg" : "text-muted hover:text-fg"
                     }`}
@@ -222,70 +260,26 @@ export function ResultsPage() {
               <input
                 type="search"
                 aria-label="Search files"
-                placeholder="Search by name or path"
+                placeholder="Search all folders by name or path"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="selectable h-9 w-72 rounded-lg border border-line bg-surface px-3 text-[13px] outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
+                className="selectable h-9 w-80 rounded-lg border border-line bg-surface px-3 text-[13px] outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
               />
             </div>
 
-            <Card className="overflow-hidden">
-              <table className="w-full table-fixed text-[13px]">
-                <thead className="border-b border-line bg-surface-2 text-left text-[11.5px] tracking-wide text-muted uppercase">
-                  <tr>
-                    <th className="px-4 py-2.5 font-medium">Name</th>
-                    <th className="w-28 px-4 py-2.5 text-right font-medium">Size</th>
-                    <th className="w-24 px-4 py-2.5 font-medium">Source</th>
-                    <th className="w-40 px-4 py-2.5 font-medium">Status</th>
-                    <th className="w-40 px-4 py-2.5 font-medium">Modified</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {items.map((r) => {
-                    const st = itemStatus(r);
-                    return (
-                      <tr key={r.id} className="hover:bg-surface-2/60">
-                        <td className="px-4 py-2.5">
-                          <div className="selectable truncate font-medium" title={r.name}>
-                            {r.name}
-                            {!r.name_complete && r.origin === "metadata" && (
-                              <span className="ml-1.5 text-[11px] font-normal text-muted">(name partly lost)</span>
-                            )}
-                          </div>
-                          <div className="selectable truncate text-[12px] text-muted" title={r.path}>
-                            {r.path}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums">{formatBytes(r.size)}</td>
-                        <td className="px-4 py-2.5 text-muted">{r.origin === "carved" ? "Signature" : (r.filesystem ?? "—")}</td>
-                        <td className="px-4 py-2.5">
-                          <span title={st.hint} className={`rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${TONES[st.tone]}`}>
-                            {st.text}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5 text-muted">{formatDateTime(r.modified_at)}</td>
-                      </tr>
-                    );
-                  })}
-                  {items.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-muted">
-                        No files match.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-              <div className="flex items-center justify-between border-t border-line px-4 py-2.5 text-[12.5px] text-muted">
-                <span>
-                  Showing {items.length.toLocaleString()} of {total.toLocaleString()}
-                </span>
-                {items.length < total && <Button onClick={loadMore}>Load more</Button>}
-              </div>
-            </Card>
+            <div className="flex min-h-[460px] flex-1 gap-4">
+              {debounced ? (
+                <SearchResults scanId={scan.id} view={view} search={debounced} selected={selected} onSelect={setSelected} />
+              ) : (
+                <Explorer scanId={scan.id} view={view} carvedCount={stats?.carved ?? 0} selected={selected} onSelect={setSelected} />
+              )}
+              <aside aria-label="Preview" className="w-[360px] shrink-0 overflow-hidden rounded-xl border border-line bg-surface xl:w-[420px]">
+                <PreviewPane item={selected} />
+              </aside>
+            </div>
           </>
         )}
       </div>
-    </>
+    </div>
   );
 }

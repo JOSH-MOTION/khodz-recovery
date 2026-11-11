@@ -89,6 +89,22 @@ const MIGRATIONS: &[&str] = &[
     CREATE INDEX idx_scan_items_deleted ON scan_items(scan_id, is_deleted);
     CREATE INDEX idx_scan_items_origin  ON scan_items(scan_id, origin);
     "#,
+    // v3 — per-volume scan summary (Stage 6 explorer)
+    r#"
+    CREATE TABLE scan_volumes (
+        id         INTEGER PRIMARY KEY,
+        scan_id    INTEGER NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+        offset     INTEGER NOT NULL,
+        size       INTEGER NOT NULL,
+        filesystem TEXT    NOT NULL,
+        label      TEXT,
+        entries    INTEGER NOT NULL DEFAULT 0,
+        deleted    INTEGER NOT NULL DEFAULT 0,
+        corrupt    INTEGER NOT NULL DEFAULT 0,
+        error      TEXT
+    );
+    CREATE INDEX idx_scan_volumes ON scan_volumes(scan_id);
+    "#,
 ];
 
 pub const LATEST: u32 = MIGRATIONS.len() as u32;

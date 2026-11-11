@@ -39,6 +39,9 @@ pub fn run() {
             scans::list_scan_items,
             scans::scan_item_stats,
             scans::get_scan_item,
+            scans::read_item_data,
+            scans::list_volumes,
+            scans::list_folder,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start Khodz Recovery");

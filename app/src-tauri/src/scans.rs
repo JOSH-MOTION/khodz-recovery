@@ -8,7 +8,8 @@ use tauri::{AppHandle, Manager, State};
 
 use khodz_core::{CancelToken, Error};
 use khodz_db::{
-    ItemFilter, ItemStats, NewScan, NewScanItem, Page, ScanItemDetail, ScanItemRow, ScanStatus, SourceKind,
+    FolderEntry, ItemFilter, ItemStats, ItemView, NewScan, NewScanItem, NewScanVolume, Page, ScanItemDetail,
+    ScanItemRow, ScanStatus, ScanVolume, Scope, SourceKind,
 };
 use khodz_engine::{DataState, Origin, ScanItem, ScanMode, ScanProgress, ScanSummary};
 use khodz_io::{BlockSource, ImageFile};
@@ -167,9 +168,121 @@ pub fn run_scan(
         (Err(e @ Error::DeviceLost(_)), _) => (ScanStatus::DeviceLost, Some(e.to_string()), None),
         (Err(e), _) | (Ok(_), Err(e)) => (ScanStatus::Failed, Some(e.to_string()), None),
     };
-    let db = state.db()?;
+    let mut db = state.db()?;
+    if let Some(s) = &summary {
+        let volumes: Vec<NewScanVolume> = s
+            .volumes
+            .iter()
+            .map(|v| NewScanVolume {
+                offset: v.offset,
+                size: v.size,
+                filesystem: v.filesystem.clone(),
+                label: v.label.clone(),
+                entries: v.entries,
+                deleted: v.deleted,
+                corrupt: v.corrupt,
+                error: v.error.clone(),
+            })
+            .collect();
+        db.insert_scan_volumes(scan.id, &volumes)?;
+    }
     db.finish_scan(scan.id, status, error.as_deref())?;
     Ok(ScanOutcome { scan_id: scan.id, status, items: stored, error, summary })
+}
+
+/// Maximum bytes returned for one preview request.
+const PREVIEW_MAX: usize = 32 << 20;
+
+/// Read part of a scan item's data from its (read-only) source.
+pub fn read_item_impl(
+    state: &AppState,
+    item_id: i64,
+    offset: u64,
+    len: usize,
+) -> Result<Vec<u8>, CommandError> {
+    let (detail, scan) = {
+        let db = state.db()?;
+        let d = db.get_scan_item(item_id)?;
+        let s = db.get_scan(d.scan_id)?;
+        (d, s)
+    };
+    if detail.row.is_dir {
+        return Err(CommandError { kind: "invalid_request", message: "folders have no data".into() });
+    }
+    let source = match scan.source_kind {
+        SourceKind::Image => ScanSource::Image { path: scan.source_path.clone() },
+        _ => ScanSource::Device { path: scan.source_path.clone(), label: None },
+    };
+    let (src, _, _, _) = open_source(&source)?;
+    if src.len() != scan.source_size {
+        return Err(CommandError {
+            kind: "source_changed",
+            message: format!(
+                "{} is now {} bytes but was {} bytes when scanned; rescan it",
+                scan.source_path,
+                src.len(),
+                scan.source_size
+            ),
+        });
+    }
+    let extents: Vec<khodz_engine::AbsExtent> =
+        detail.extents.iter().map(|&(offset, len)| khodz_engine::AbsExtent { offset, len }).collect();
+    Ok(khodz_engine::read_item_range(
+        &*src,
+        &extents,
+        detail.resident.as_deref(),
+        detail.row.size,
+        offset,
+        len.min(PREVIEW_MAX),
+    )?)
+}
+
+#[tauri::command]
+pub async fn read_item_data(
+    app: AppHandle,
+    item_id: i64,
+    offset: u64,
+    len: usize,
+) -> Result<tauri::ipc::Response, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        read_item_impl(&state, item_id, offset, len).map(tauri::ipc::Response::new)
+    })
+    .await
+    .map_err(|e| CommandError::internal(e.to_string()))?
+}
+
+#[tauri::command]
+pub fn list_volumes(
+    state: State<'_, AppState>,
+    scan_id: i64,
+    view: ItemView,
+) -> Result<Vec<ScanVolume>, CommandError> {
+    Ok(state.db()?.list_scan_volumes(scan_id, view)?)
+}
+
+#[derive(Debug, Serialize)]
+pub struct FolderListing {
+    pub folders: Vec<FolderEntry>,
+    pub files: Vec<ScanItemRow>,
+    pub total_files: u64,
+}
+
+#[tauri::command]
+pub fn list_folder(
+    state: State<'_, AppState>,
+    scan_id: i64,
+    scope: Scope,
+    dir: String,
+    view: ItemView,
+    page: Option<Page>,
+) -> Result<FolderListing, CommandError> {
+    let db = state.db()?;
+    let page = page.unwrap_or_default();
+    // Folders are listed with the first page only.
+    let folders = if page.offset == 0 { db.list_folders(scan_id, scope, &dir, view)? } else { Vec::new() };
+    let (files, total_files) = db.list_files(scan_id, scope, &dir, view, page)?;
+    Ok(FolderListing { folders, files, total_files })
 }
 
 #[tauri::command]
@@ -227,7 +340,6 @@ pub fn get_scan_item(state: State<'_, AppState>, id: i64) -> Result<ScanItemDeta
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khodz_db::ItemView;
 
     fn state() -> AppState {
         AppState::new(khodz_db::Database::open_in_memory().unwrap(), "memory".into())
@@ -304,5 +416,84 @@ mod tests {
         assert!(rows.iter().any(|r| r.name == "to-delete-1.bin" && r.data_state == "erased"));
         let search = ItemFilter { view: ItemView::AllFiles, search: Some("report.bin".into()) };
         assert_eq!(db.count_scan_items(out.scan_id, &search).unwrap(), 3, "one per volume");
+        let vols = db.list_scan_volumes(out.scan_id, ItemView::AllFiles).unwrap();
+        let labels: Vec<_> = vols.iter().map(|v| v.label.clone().unwrap_or_default()).collect();
+        assert_eq!(labels, vec!["PFAT", "LNTFS", "LEXFAT"], "volume summaries stored");
+    }
+
+    /// End to end: scan, then read every verified carved file and every live file back through
+    /// the preview path and compare with the generator's SHA-256 manifest.
+    #[test]
+    #[ignore = "needs fixtures/out (both generators)"]
+    fn preview_bytes_match_original_files() {
+        use sha2::{Digest, Sha256};
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/out/");
+        let hex = |d: &[u8]| Sha256::digest(d).iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let s = state();
+
+        let out = run_scan(
+            &s,
+            &ScanSource::Image { path: format!("{dir}carving.img") },
+            ScanMode::Deep,
+            &CancelToken::new(),
+            |_| {},
+        )
+        .unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(
+            std::fs::read_to_string(format!("{dir}carving-manifest.json"))
+                .unwrap()
+                .trim_start_matches('\u{feff}'),
+        )
+        .unwrap();
+        let carved = ItemFilter { view: ItemView::Carved, search: None };
+        let rows =
+            s.db().unwrap().list_scan_items(out.scan_id, &carved, Page { limit: 500, offset: 0 }).unwrap();
+        let mut checked = 0;
+        for f in manifest["files"].as_array().unwrap().iter().filter(|f| f["expect"] == "complete") {
+            let off = f["offset"].as_u64().unwrap();
+            let row = rows.iter().find(|r| r.name.contains(&format!("{off:012X}"))).expect("carved item");
+            let data = read_item_impl(&s, row.id, 0, usize::MAX).unwrap();
+            assert_eq!(hex(&data), f["sha256"].as_str().unwrap(), "{}", f["name"]);
+            checked += 1;
+        }
+        assert_eq!(checked, 5);
+
+        let out = run_scan(
+            &s,
+            &ScanSource::Image { path: format!("{dir}gpt-ntfs.img") },
+            ScanMode::Quick,
+            &CancelToken::new(),
+            |_| {},
+        )
+        .unwrap();
+        let fs_manifest: serde_json::Value = serde_json::from_str(
+            std::fs::read_to_string(format!("{dir}manifest.json")).unwrap().trim_start_matches('\u{feff}'),
+        )
+        .unwrap();
+        let ntfs =
+            fs_manifest["images"].as_array().unwrap().iter().find(|i| i["file"] == "gpt-ntfs.img").unwrap();
+        let files = &ntfs["volumes"]["files"];
+        let files = files
+            .as_array()
+            .cloned()
+            .unwrap_or_else(|| ntfs["volumes"][0]["files"].as_array().unwrap().clone());
+        let db_rows = s
+            .db()
+            .unwrap()
+            .list_scan_items(out.scan_id, &ItemFilter::default(), Page { limit: 500, offset: 0 })
+            .unwrap();
+        let mut live = 0;
+        for f in files.iter().filter(|f| f["deleted"] == false) {
+            let path = format!("/{}", f["path"].as_str().unwrap());
+            let row = db_rows.iter().find(|r| r.path == path).unwrap_or_else(|| panic!("{path}"));
+            let data = read_item_impl(&s, row.id, 0, usize::MAX).unwrap();
+            assert_eq!(hex(&data), f["sha256"].as_str().unwrap(), "{path}");
+            // Windowed reads agree with the full read.
+            if data.len() > 5000 {
+                assert_eq!(read_item_impl(&s, row.id, 1234, 3000).unwrap(), data[1234..4234].to_vec());
+            }
+            live += 1;
+        }
+        assert!(live >= 8, "{live}");
     }
 }

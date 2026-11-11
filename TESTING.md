@@ -1,5 +1,15 @@
 # Khodz Recovery — Testing Strategy
 
+## Stage 6 additions (Windows 11 x64, 2026-11-11)
+
+| Suite | Result |
+|---|---|
+| `cargo test -p khodz-db` (adds tree: per-volume folders/files, `/docs` vs `/docs0` boundary, `%`/`_` in folder names, same path on two volumes, Deleted view hides folders without deleted files, carved scope, stored volumes + fallback) | 26 passed |
+| `cargo test -p khodz-engine` (adds `read_item_range`: extents, sparse, windows across boundaries, truncation, partial items, resident) | 4 passed (+3 fixture) |
+| `cargo test -p khodz-recovery -- --include-ignored` (adds volumes persisted; **preview bytes of 5 verified carved files and every live NTFS file match the originals' SHA-256**, windowed reads agree) | 15 passed |
+| `npm test` (explorer navigation incl. keyboard, carved location, search mode, previews: text/hex/details/erased/image decode failure/partial-image caption/binary fallback/read errors, default location for raw images, preview helpers incl. "SVG/HTML never rendered") | 49 passed |
+| Workspace total `cargo test` / fixture tests (`--ignored`, excluding the admin-only device test) | 124 / 8 passed |
+
 ## Stage 5 additions (Windows 11 x64, 2026-11-11)
 
 | Suite | Result |

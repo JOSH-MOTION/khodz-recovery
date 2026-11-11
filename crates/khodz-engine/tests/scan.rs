@@ -26,6 +26,32 @@ fn blank_media_produces_no_items_and_no_errors() {
 }
 
 #[test]
+fn read_item_range_follows_extents_sparse_and_resident() {
+    let data: Vec<u8> = (0..=255u8).cycle().take(8192).collect();
+    let src = MemSource::new(data.clone(), 512);
+    // Logical file: 100 bytes at 1000, then 50 sparse bytes, then 30 bytes at 5000.
+    let ext = [
+        AbsExtent { offset: Some(1000), len: 100 },
+        AbsExtent { offset: None, len: 50 },
+        AbsExtent { offset: Some(5000), len: 30 },
+    ];
+    let all = read_item_range(&src, &ext, None, 180, 0, 1 << 20).unwrap();
+    assert_eq!(all.len(), 180);
+    assert_eq!(&all[..100], &data[1000..1100]);
+    assert!(all[100..150].iter().all(|&b| b == 0), "sparse reads as zeros");
+    assert_eq!(&all[150..], &data[5000..5030]);
+    // Windows across extent boundaries.
+    assert_eq!(read_item_range(&src, &ext, None, 180, 90, 70).unwrap(), all[90..160].to_vec());
+    // Size smaller than extents truncates; offset past the end is empty.
+    assert_eq!(read_item_range(&src, &ext, None, 120, 0, 1000).unwrap().len(), 120);
+    assert!(read_item_range(&src, &ext, None, 180, 500, 10).unwrap().is_empty());
+    // Missing extents (partial item): only what is located is returned.
+    assert_eq!(read_item_range(&src, &ext[..1], None, 180, 0, 1000).unwrap().len(), 100);
+    // Resident data.
+    assert_eq!(read_item_range(&src, &[], Some(b"hello world"), 11, 6, 100).unwrap(), b"world");
+}
+
+#[test]
 fn cancellation_is_propagated() {
     let src = MemSource::new(vec![0u8; 8 << 20], 512);
     let cancel = CancelToken::new();

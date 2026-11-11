@@ -37,6 +37,15 @@ validated as `disk[0-9a-z]+` before being passed to the command. No elevation is
 - `unsafe` additionally appears in `crates/khodz-io/src/device/{windows,macos}.rs` for the size
   IOCTLs, each with a SAFETY note.
 
+## Previewing recovered data (Stage 6)
+
+- Preview bytes are read through the same read-only path as scanning, capped at 32 MiB per
+  request; the source is re-opened and rejected if its size changed since the scan.
+- Images are handed to the webview's image decoder through `blob:` URLs (allowed by the CSP
+  `img-src`). Everything else is shown as text (React-escaped) or hex. SVG, HTML and scripts
+  are always text — recovered content is never rendered as markup, framed or executed.
+- Nothing is written to disk for previews.
+
 ## Privilege design
 
 - The UI process runs unprivileged.
