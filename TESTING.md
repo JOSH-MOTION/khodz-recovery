@@ -7,6 +7,7 @@
 | `cargo test -p khodz-io` unit (error classification, device-path validation) | 3 passed |
 | `cargo test -p khodz-io --test image_and_adapters` | 14 passed |
 | `cargo test -p khodz-io --test raw_device` | 2 passed, 1 ignored (needs elevation) |
+| …same, elevated, `--ignored`, `KHODZ_TEST_DEVICE=\\.\PhysicalDrive2` (USB stick) | 1 passed: 30,765,219,840 B, 512 B sectors, boot signature, aligned/unaligned consistency |
 | `cargo test -p khodz-recovery` (adds image inspect/fingerprint/cancel, job table) | 9 passed |
 | `npm test` (adds Disk Images page) | 27 passed |
 | clippy `-D warnings` on Windows + `{aarch64,x86_64}-apple-darwin` (io/device/core) | clean |

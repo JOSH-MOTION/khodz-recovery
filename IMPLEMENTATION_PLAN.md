@@ -27,7 +27,7 @@ Vite 8.3, Tailwind 4.3, TypeScript 7.0, Vitest 5.1.
 | 0 | Audit + docs | This file and the four companion docs exist | ☑ |
 | 1 | Foundation | Cargo workspace builds; `khodz-core`, `khodz-db` with migrations + unit tests; Tauri 2 app launches; React shell with sidebar nav (Drives, Disk Images, Results, Recovery, History, Settings), dark/light/system theme, Tailwind tokens; `cargo test` + `npm test` + `tsc --noEmit` green on Windows | ☑ Windows (2026-11-11) · macOS unverified |
 | 2 | Device discovery | Lists physical disks + volumes with size/model/bus/removable on Windows; macOS module compiles and is tested in CI; UI drive cards from real data (no mocks) | ☑ Windows (2026-11-11) · macOS: parser unit-tested + cross-compiled, **not yet run on a Mac** |
-| 3 | Read-only access + images | `BlockSource` for images, Windows drives, macOS rdisk; bounded cache; cancellation; disconnect → `DeviceLost`; source-unchanged hash test | ☑ Windows images (2026-11-11) · raw-device reads: unelevated denial verified, elevated read **not yet run** · macOS: compiles only |
+| 3 | Read-only access + images | `BlockSource` for images, Windows drives, macOS rdisk; bounded cache; cancellation; disconnect → `DeviceLost`; source-unchanged hash test | ☑ Windows images + raw devices (2026-11-11; elevated read verified on a USB stick, unelevated denial verified) · macOS: compiles only |
 | 4 | Partitions + FS parsing | MBR/GPT; probe+walk for FAT32, exFAT, NTFS, HFS+, APFS (live files); fixture images per FS | ☐ |
 | 5 | Quick + deep scan | Deleted-entry discovery (NTFS, FAT32, exFAT first); carving for JPEG/PNG/GIF/PDF/ZIP-family/MP4/MOV/MP3/WAV with validators; fragmentation honesty tests | ☐ |
 | 6 | Results explorer + preview | Virtualised tree/list from paged DB; filters; image/text/hex preview (preview reads ≤ 8 MiB) | ☐ |
@@ -67,7 +67,10 @@ Not yet done / limitations:
   Without it the app reports "access denied" (verified). An elevated helper process is planned
   before scanning live drives (Stage 5); until then live drives can be scanned only by running
   the app elevated, and images need nothing.
-- The elevated raw-read test (`raw_device.rs`, `--ignored`) has not been run yet.
+- Elevated raw read verified once, manually, on `\\.\PhysicalDrive2` (USB SanDisk 3.2Gen1,
+  FAT32): size 30,765,219,840 B (matches `Get-Disk`), 512 B sectors, 0x55AA boot signature,
+  unaligned reads consistent with aligned ones, EOF handled. It is `#[ignore]`d in normal runs
+  because it needs Administrator and a chosen device.
 - Only raw images; E01/AFF, compressed DMG, VHD/VHDX are not supported.
 - Image sector size is assumed 512 until Stage 4 detects it from GPT/filesystem headers.
 
