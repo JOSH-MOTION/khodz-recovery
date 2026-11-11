@@ -1,0 +1,127 @@
+//! Forward-only schema migrations keyed on SQLite's `user_version`.
+
+use rusqlite::Connection;
+
+use crate::{DbError, DbResult};
+
+/// Each entry upgrades the schema from version `index` to `index + 1`. Never edit a shipped
+/// migration; append a new one.
+const MIGRATIONS: &[&str] = &[
+    // v1 — initial schema
+    r#"
+    CREATE TABLE scans (
+        id            INTEGER PRIMARY KEY,
+        source_kind   TEXT    NOT NULL CHECK (source_kind IN ('physical_disk','volume','image')),
+        source_path   TEXT    NOT NULL,
+        source_label  TEXT,
+        source_size   INTEGER NOT NULL CHECK (source_size >= 0),
+        scan_mode     TEXT    NOT NULL CHECK (scan_mode IN ('quick','deep')),
+        status        TEXT    NOT NULL CHECK (status IN ('running','completed','cancelled','failed','device_lost')),
+        error         TEXT,
+        started_at    INTEGER NOT NULL,
+        finished_at   INTEGER,
+        items_found   INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX idx_scans_started ON scans(started_at DESC);
+
+    CREATE TABLE scan_items (
+        id             INTEGER PRIMARY KEY,
+        scan_id        INTEGER NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+        parent_id      INTEGER REFERENCES scan_items(id) ON DELETE CASCADE,
+        name           TEXT    NOT NULL,
+        path           TEXT    NOT NULL,
+        size           INTEGER NOT NULL CHECK (size >= 0),
+        is_dir         INTEGER NOT NULL DEFAULT 0,
+        is_deleted     INTEGER NOT NULL DEFAULT 0,
+        origin         TEXT    NOT NULL CHECK (origin IN ('metadata','carved')),
+        extent_quality TEXT    NOT NULL CHECK (extent_quality IN ('exact','contiguity_assumed','partial','unknown')),
+        filesystem     TEXT,
+        file_type      TEXT,
+        created_at     INTEGER,
+        modified_at    INTEGER,
+        extents        BLOB
+    );
+    CREATE INDEX idx_scan_items_parent ON scan_items(scan_id, parent_id);
+
+    CREATE TABLE recoveries (
+        id             INTEGER PRIMARY KEY,
+        scan_id        INTEGER REFERENCES scans(id) ON DELETE SET NULL,
+        destination    TEXT    NOT NULL,
+        status         TEXT    NOT NULL CHECK (status IN ('running','completed','cancelled','failed')),
+        error          TEXT,
+        started_at     INTEGER NOT NULL,
+        finished_at    INTEGER,
+        files_total    INTEGER NOT NULL DEFAULT 0,
+        files_verified INTEGER NOT NULL DEFAULT 0,
+        files_failed   INTEGER NOT NULL DEFAULT 0,
+        bytes_written  INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX idx_recoveries_started ON recoveries(started_at DESC);
+
+    CREATE TABLE recovery_items (
+        id           INTEGER PRIMARY KEY,
+        recovery_id  INTEGER NOT NULL REFERENCES recoveries(id) ON DELETE CASCADE,
+        scan_item_id INTEGER REFERENCES scan_items(id) ON DELETE SET NULL,
+        output_path  TEXT    NOT NULL,
+        size         INTEGER NOT NULL,
+        sha256       TEXT,
+        outcome      TEXT    NOT NULL CHECK (outcome IN ('verified','mismatch','partial_source','failed')),
+        error        TEXT
+    );
+
+    CREATE TABLE settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    "#,
+];
+
+pub const LATEST: u32 = MIGRATIONS.len() as u32;
+
+pub fn migrate(conn: &mut Connection) -> DbResult<()> {
+    let current: u32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    if current > LATEST {
+        return Err(DbError::SchemaTooNew { found: current, supported: LATEST });
+    }
+    for (index, sql) in MIGRATIONS.iter().enumerate().skip(current as usize) {
+        let tx = conn.transaction()?;
+        tx.execute_batch(sql)?;
+        tx.pragma_update(None, "user_version", (index as u32).saturating_add(1))?;
+        tx.commit()?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrates_fresh_database_to_latest() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn).unwrap();
+        let v: u32 = conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+        assert_eq!(v, LATEST);
+        // Idempotent.
+        migrate(&mut conn).unwrap();
+    }
+
+    #[test]
+    fn refuses_newer_schema() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "user_version", LATEST + 1).unwrap();
+        assert!(matches!(migrate(&mut conn), Err(DbError::SchemaTooNew { .. })));
+    }
+
+    #[test]
+    fn check_constraints_reject_bad_enum_values() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn).unwrap();
+        let bad = conn.execute(
+            "INSERT INTO scans (source_kind, source_path, source_size, scan_mode, status, started_at)
+             VALUES ('floppy', 'x', 0, 'quick', 'running', 0)",
+            [],
+        );
+        assert!(bad.is_err());
+    }
+}

@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Design tokens. Light is the base; dark overrides. Components use only these tokens. */
+:root {
+  --k-bg: #f3f5f9;
+  --k-sidebar: #e9edf4;
+  --k-surface: #ffffff;
+  --k-surface-2: #f1f4f9;
+  --k-border: #d9e0ea;
+  --k-text: #0f1a2c;
+  --k-muted: #5a6a84;
+  --k-accent: #0891b2;
+  --k-accent-strong: #0e7490;
+  --k-accent-soft: rgb(8 145 178 / 0.1);
+  --k-ok: #15803d;
+  --k-warn: #b45309;
+  --k-danger: #b91c1c;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --k-bg: #0b1220;
+  --k-sidebar: #0e1626;
+  --k-surface: #111a2b;
+  --k-surface-2: #162036;
+  --k-border: #22304a;
+  --k-text: #e5ecf6;
+  --k-muted: #8796b0;
+  --k-accent: #22d3ee;
+  --k-accent-strong: #67e8f9;
+  --k-accent-soft: rgb(34 211 238 / 0.1);
+  --k-ok: #4ade80;
+  --k-warn: #fbbf24;
+  --k-danger: #f87171;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--k-bg);
+  --color-sidebar: var(--k-sidebar);
+  --color-surface: var(--k-surface);
+  --color-surface-2: var(--k-surface-2);
+  --color-line: var(--k-border);
+  --color-fg: var(--k-text);
+  --color-muted: var(--k-muted);
+  --color-accent: var(--k-accent);
+  --color-accent-strong: var(--k-accent-strong);
+  --color-accent-soft: var(--k-accent-soft);
+  --color-ok: var(--k-ok);
+  --color-warn: var(--k-warn);
+  --color-danger: var(--k-danger);
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Helvetica Neue", sans-serif;
+  --font-mono: "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--k-bg);
+  color: var(--k-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  /* Desktop apps don't select chrome text on drag. Content areas opt back in. */
+  user-select: none;
+  cursor: default;
+  overflow: hidden;
+}
+
+.selectable {
+  user-select: text;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--k-border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+@keyframes k-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.k-enter {
+  animation: k-enter 180ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k-enter {
+    animation: none;
+  }
+}
