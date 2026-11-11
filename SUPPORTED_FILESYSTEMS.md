@@ -1,38 +1,50 @@
 # Supported Filesystems
 
-**Current state: nothing is implemented yet.** The table below is the *target*; a cell is only
-changed to ✅ when a regression test on a fixture image proves it.
+Status as of **Stage 4 (2026-11-11)**. A capability is ✅ only when a test proves it on real
+media; "verified" below means against disk images that **Windows itself** partitioned,
+formatted and populated (`fixtures/windows/make-fixtures.ps1`), not against our own writer.
 
-| Capability | FAT32 | exFAT | NTFS | HFS+ | APFS |
-|---|---|---|---|---|---|
-| Detect / identify | planned | planned | planned | planned | planned |
-| List live files | planned | planned | planned | planned | planned (unencrypted only) |
-| Discover deleted entries | planned | planned | planned | limited | very limited |
-| Exact extents for deleted files | first cluster only¹ | yes if `NoFatChain`² | yes (data runs)³ | no⁴ | no⁵ |
-| Recover resident/small files | n/a | n/a | yes (resident `$DATA`) | — | — |
-| Signature carving fallback | yes | yes | yes | yes | yes (unencrypted only) |
+| Capability | FAT12/16 | FAT32 | exFAT | NTFS | HFS+ | APFS |
+|---|---|---|---|---|---|---|
+| Detect / identify | ✅ unit | ✅ verified | ✅ verified | ✅ verified | ✅ unit (spec) | ✅ unit (spec) |
+| Volume label, cluster size | ✅ unit | ✅ verified | ✅ verified | ✅ verified | — | — |
+| List live files with correct content | implemented, **no fixture yet** | ✅ verified | ✅ verified | ✅ verified | ❌ not implemented | ❌ not implemented |
+| Fragmented live files | via FAT chain | ✅ verified | ✅ verified | ✅ verified (runlists) | ❌ | ❌ |
+| Discover deleted entries | implemented | ✅ verified | ✅ verified | ✅ verified | ❌ | ❌ |
+| Deleted names | LFN fully recovered; 8.3-only names lose 1st char (flagged) | same | ✅ intact | ✅ intact (see pending-delete note) | — | — |
+| Deleted-file extents | start cluster + assumed contiguity | same, plus FAT32 high-word reconstruction | exact if `NoFatChain`, else assumed | exact runs | — | — |
+| Recover deleted content | Stage 5 | Stage 5 | Stage 5 | Stage 5 | — | — |
 
-## Expected limitations (by design of the filesystems, not of the app)
+Partition tables: **MBR** (incl. extended/EBR chains), **GPT** (512 and 4096-byte sectors, header
+and entry-array CRCs, backup header fallback) and superfloppy volumes are ✅ verified.
 
-1. **FAT32** — deleting a file zeroes its FAT chain. Only the first cluster and size survive, so we
-   recover by *assuming contiguity*. Such files are labelled "contiguity assumed" and verified with
-   format validators where possible; fragmented files will be reported as possibly corrupt, never
-   as "complete".
-2. **exFAT** — if the stream extension's `NoFatChain` flag was set the file was contiguous and its
-   extent is exact; otherwise same caveat as FAT32.
-3. **NTFS** — deleted MFT records retain data runs until reused. Clusters may have been reallocated;
-   we cross-check against `$Bitmap` and mark overlaps as "possibly overwritten".
-4. **HFS+** — deleting a file removes its catalog record (B-tree node rebalanced). Recovery of names
-   relies on stale node slack and the journal; primary recovery path is carving.
-5. **APFS** — copy-on-write with checkpoints/snapshots; deleted-file recovery is opportunistic via
-   older checkpoint object maps and snapshots. **Encrypted APFS volumes (default on Apple Silicon
-   and T2 Macs' internal SSDs) are unsupported for deleted data**, and TRIM on SSDs usually erases
-   freed blocks — no tool can recover those.
+## What the verification found on real Windows 11 media
 
-## General
+- **TRIM erases deleted data.** On the fixture VHDs Windows issued TRIM for deleted clusters
+  and the freed space reads back as zeros — the same behaviour as SSDs. Deleted entries are
+  still found (names, sizes, locations), but their content is gone and the app says so
+  ("erased") rather than producing empty files. Expect the same on SSDs and many USB sticks.
+- **FAT/exFAT deleted folders:** a folder's listing lives in its own clusters. When those are
+  TRIMmed, files inside a deleted folder cannot be listed by *any* tool; the folder itself is
+  still found. NTFS keeps this information in the MFT and is unaffected.
+- **NTFS pending deletes (Windows 10 1903+).** If a file is deleted while another program
+  (antivirus, indexer) has it open, Windows moves it to `\$Extend\$Deleted` under an ID until
+  the handle closes. Its data is intact; its original name is not stored there. Khodz reports
+  these as deleted files with "name lost" and they were matched to the originals by content.
+- **FAT32 deleted start clusters.** Windows clears the high 16 bits of a deleted entry's start
+  cluster. Khodz reconstructs it — directories are verified through their own `.` entry; files
+  must land on free clusters; if more than one candidate fits the extents are marked *partial*,
+  never *exact*.
 
-- **SSD TRIM**: on any filesystem, TRIMmed blocks typically read back as zeros. The app detects
-  all-zero extents and reports "data erased by TRIM" rather than producing empty files.
-- **BitLocker / FileVault**: volumes must be unlocked by the OS first (see SECURITY.md).
-- **Not supported**: ext2/3/4, Btrfs, XFS, ReFS, ZFS, RAID/LVM/Storage Spaces reassembly,
-  E01/AFF images (raw `.img`/`.dd`/`.bin` images and `.dmg` raw images only, initially).
+## Not supported / not yet implemented
+
+- **HFS+ and APFS file listing** — detection only. Needs the B-tree catalog (HFS+) and
+  object map / fs-tree (APFS) parsers, and fixtures built with `hdiutil` on a Mac.
+- **Encrypted APFS (FileVault) deleted data** — not recoverable by design (keys + TRIM).
+- **BitLocker** — detected and reported; must be unlocked in Windows first.
+- **NTFS files whose runs continue in extension records (`$ATTRIBUTE_LIST`)** — listed, but
+  marked *partial*; following attribute lists is not implemented yet. Very fragmented or very
+  large files are affected.
+- **NTFS damaged `$MFT` record 0** — the `$MFTMirr` fallback is not implemented yet.
+- ext2/3/4, Btrfs, XFS, ReFS, ZFS, RAID/LVM/Storage Spaces/dynamic disks, E01/AFF/VHD(X) and
+  compressed DMG images.

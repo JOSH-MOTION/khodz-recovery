@@ -48,6 +48,66 @@ pub async fn inspect_image(path: String) -> Result<ImageInfo, CommandError> {
         .map_err(|e| CommandError::internal(e.to_string()))?
 }
 
+#[derive(Debug, Serialize)]
+pub struct VolumeAnalysis {
+    /// Partition number, or None when the filesystem starts at sector 0 (no partition table).
+    pub partition: Option<u32>,
+    pub offset: u64,
+    pub size: u64,
+    pub type_name: String,
+    pub fs: khodz_fs::FsInfo,
+    pub walkable: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ImageAnalysis {
+    pub table: khodz_part::PartitionTable,
+    pub volumes: Vec<VolumeAnalysis>,
+}
+
+/// Read the partition table and identify the filesystem on every partition. Metadata only:
+/// reads a few KiB per partition.
+pub fn analyze_image_impl(path: &str) -> Result<ImageAnalysis, CommandError> {
+    let img = ImageFile::open(path)?;
+    let table = khodz_part::read_partition_table(&img)?;
+    let regions: Vec<(Option<u32>, u64, u64, String)> = if table.partitions.is_empty() {
+        vec![(None, 0, img.len(), "Whole image".into())]
+    } else {
+        table
+            .partitions
+            .iter()
+            .filter(|p| !p.is_container())
+            .map(|p| (Some(p.number), p.offset, p.size, p.type_name.clone()))
+            .collect()
+    };
+    let mut volumes = Vec::new();
+    for (partition, offset, size, type_name) in regions {
+        // Partitions that run past the end are clamped so detection still works on what exists.
+        let size = size.min(img.len().saturating_sub(offset));
+        let fs = match khodz_io::SliceSource::new(&img, offset, size, type_name.clone()) {
+            Ok(slice) => {
+                // Prefer the opened filesystem's info (it includes labels stored in metadata).
+                let detected = khodz_fs::detect(&slice)?;
+                if detected.kind.walkable() {
+                    khodz_fs::open(&slice).map(|f| f.info().clone()).unwrap_or(detected)
+                } else {
+                    detected
+                }
+            }
+            Err(_) => continue,
+        };
+        volumes.push(VolumeAnalysis { partition, offset, size, type_name, walkable: fs.kind.walkable(), fs });
+    }
+    Ok(ImageAnalysis { table, volumes })
+}
+
+#[tauri::command]
+pub async fn analyze_image(path: String) -> Result<ImageAnalysis, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || analyze_image_impl(&path))
+        .await
+        .map_err(|e| CommandError::internal(e.to_string()))?
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct JobProgress {
     pub bytes_done: u64,
@@ -147,6 +207,39 @@ mod tests {
         assert_eq!(r.bytes, 3 << 20);
         assert_eq!(r.sha256.len(), 64);
         assert_eq!(events.last().map(|p| p.bytes_done), Some(3 << 20), "final progress always sent");
+    }
+
+    #[test]
+    fn blank_image_analysis_reports_unknown_honestly() {
+        let f = temp_image(1 << 20);
+        let a = analyze_image_impl(f.path().to_str().unwrap()).unwrap();
+        assert_eq!(a.table.kind, khodz_part::TableKind::Unknown);
+        assert_eq!(a.volumes.len(), 1);
+        assert_eq!(a.volumes[0].fs.kind, khodz_fs::FsKind::Unknown);
+        assert!(!a.volumes[0].walkable);
+    }
+
+    /// Uses the Windows-built fixture (fixtures/windows/make-fixtures.ps1).
+    #[test]
+    #[ignore = "needs fixtures/out/mbr-multi.img"]
+    fn analyzes_windows_built_multi_partition_image() {
+        let p = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/out/mbr-multi.img");
+        let a = analyze_image_impl(p).unwrap();
+        assert_eq!(a.table.kind, khodz_part::TableKind::Mbr);
+        let summary: Vec<_> = a
+            .volumes
+            .iter()
+            .map(|v| (v.partition, v.fs.kind, v.fs.label.clone().unwrap_or_default()))
+            .collect();
+        use khodz_fs::FsKind::*;
+        assert_eq!(
+            summary,
+            vec![
+                (Some(1), Fat32, "PFAT".into()),
+                (Some(5), Ntfs, "LNTFS".into()),
+                (Some(6), ExFat, "LEXFAT".into())
+            ]
+        );
     }
 
     #[test]

@@ -1,13 +1,19 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { FingerprintResult, ImageInfo, JobProgress } from "../lib/types";
+import type { FingerprintResult, FsKind, ImageAnalysis, ImageInfo, JobProgress } from "../lib/types";
 
 vi.mock("../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/api")>();
   return {
     ...actual,
-    api: { pickImageFile: vi.fn(), inspectImage: vi.fn(), fingerprintImage: vi.fn(), cancelJob: vi.fn() },
+    api: {
+      pickImageFile: vi.fn(),
+      inspectImage: vi.fn(),
+      analyzeImage: vi.fn(),
+      fingerprintImage: vi.fn(),
+      cancelJob: vi.fn(),
+    },
   };
 });
 
@@ -31,9 +37,31 @@ const result: FingerprintResult = {
   elapsed_ms: 12_300,
 };
 
+// Shaped like the real analysis of fixtures/out/mbr-multi.img.
+const analysis: ImageAnalysis = {
+  table: { kind: "mbr", sector_size: 512, disk_signature: 0x1a2b3c4d, disk_guid: null, partitions: [], warnings: [] },
+  volumes: [
+    vol(1, 65_536, 41_943_040, "FAT32", "fat32", "PFAT", true),
+    vol(5, 42_074_112, 41_943_040, "NTFS / exFAT", "ntfs", "LNTFS", true),
+    vol(6, 84_148_224, 41_943_040, "NTFS / exFAT", "ex_fat", "LEXFAT", true),
+  ],
+};
+
+function vol(n: number, offset: number, size: number, type: string, kind: FsKind, label: string, walkable: boolean) {
+  return {
+    partition: n,
+    offset,
+    size,
+    type_name: type,
+    walkable,
+    fs: { kind, label, serial: null, cluster_size: 4096, sector_size: 512, volume_size: size, encrypted: false, notes: [] },
+  };
+}
+
 beforeEach(() => {
   vi.mocked(api.pickImageFile).mockReset().mockResolvedValue(info.path);
   vi.mocked(api.inspectImage).mockReset().mockResolvedValue(info);
+  vi.mocked(api.analyzeImage).mockReset().mockResolvedValue(analysis);
   vi.mocked(api.fingerprintImage).mockReset();
   vi.mocked(api.cancelJob).mockReset().mockResolvedValue(true);
 });
@@ -110,6 +138,29 @@ describe("DiskImagesPage", () => {
     expect(api.cancelJob).toHaveBeenCalledWith(vi.mocked(api.fingerprintImage).mock.calls[0]![1]);
     fail({ kind: "cancelled", message: "operation cancelled" });
     expect(await screen.findByText("Cancelled.")).toBeInTheDocument();
+  });
+
+  it("shows the partition table and every filesystem", async () => {
+    await openImage();
+    expect(await screen.findByText("MBR partition table")).toBeInTheDocument();
+    expect(screen.getByText("Signature 1A2B3C4D")).toBeInTheDocument();
+    for (const label of ["PFAT", "LNTFS", "LEXFAT"]) expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.getAllByText("Readable")).toHaveLength(3);
+    expect(screen.getByRole("img", { name: "Partition map with 3 volumes" })).toBeInTheDocument();
+  });
+
+  it("states plainly when a filesystem is only detected or encrypted", async () => {
+    vi.mocked(api.analyzeImage).mockResolvedValue({
+      table: { ...analysis.table, kind: "gpt", disk_guid: "11111111-2222-3333-4444-555555555555", warnings: ["backup GPT header problem: header CRC mismatch"] },
+      volumes: [
+        vol(1, 1_048_576, 1e9, "Apple APFS", "apfs", "", false),
+        { ...vol(2, 2e9, 1e9, "Microsoft basic data", "bit_locker", "", false), fs: { ...vol(2, 0, 0, "", "bit_locker", "", false).fs, label: null, encrypted: true } },
+      ],
+    });
+    await openImage();
+    expect(await screen.findByText("Detected only")).toBeInTheDocument();
+    expect(screen.getByText("Encrypted — unlock in the OS first")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("backup GPT header problem");
   });
 
   it("never hides unreadable data in a fingerprint", async () => {

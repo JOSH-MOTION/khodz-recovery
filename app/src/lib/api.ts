@@ -4,6 +4,7 @@ import type {
   AppInfo,
   CommandError,
   FingerprintResult,
+  ImageAnalysis,
   ImageInfo,
   JobProgress,
   Page,
@@ -39,6 +40,7 @@ export const api = {
     return typeof picked === "string" ? picked : null;
   },
   inspectImage: (path: string) => invoke<ImageInfo>("inspect_image", { path }),
+  analyzeImage: (path: string) => invoke<ImageAnalysis>("analyze_image", { path }),
   fingerprintImage: (path: string, jobId: string, onProgress: (p: JobProgress) => void) => {
     const channel = new Channel<JobProgress>();
     channel.onmessage = onProgress;

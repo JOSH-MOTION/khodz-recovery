@@ -1,9 +1,12 @@
 import { useRef, useState } from "react";
 import { api, errorKind, errorMessage, IMAGE_EXTENSIONS } from "../lib/api";
 import { formatBytes, formatDateTime } from "../lib/format";
-import type { FingerprintResult, ImageInfo, JobProgress } from "../lib/types";
+import type { FingerprintResult, ImageAnalysis, ImageInfo, JobProgress } from "../lib/types";
 import { Button, Card, EmptyState, ErrorBanner, PageHeader } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { VolumeLayout } from "../components/VolumeLayout";
+
+type Analysis = { status: "loading" } | { status: "ready"; data: ImageAnalysis } | { status: "error"; message: string };
 
 type Job =
   | { status: "idle" }
@@ -23,6 +26,7 @@ export function DiskImagesPage() {
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
   const [job, setJob] = useState<Job>({ status: "idle" });
+  const [analysis, setAnalysis] = useState<Analysis>({ status: "loading" });
   const running = job.status === "running";
 
   async function openImage() {
@@ -34,6 +38,11 @@ export function DiskImagesPage() {
       const info = await api.inspectImage(path);
       setImage(info);
       setJob({ status: "idle" });
+      setAnalysis({ status: "loading" });
+      api
+        .analyzeImage(path)
+        .then((data) => setAnalysis({ status: "ready", data }))
+        .catch((e) => setAnalysis({ status: "error", message: errorMessage(e) }));
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -60,13 +69,23 @@ export function DiskImagesPage() {
             read-only. Compressed and container formats (E01, compressed DMG, VHDX) are not supported yet.
           </EmptyState>
         )}
-        {image && <ImageCard image={image} job={job} setJob={setJob} />}
+        {image && <ImageCard image={image} job={job} setJob={setJob} analysis={analysis} />}
       </div>
     </>
   );
 }
 
-function ImageCard({ image, job, setJob }: { image: ImageInfo; job: Job; setJob: (j: Job) => void }) {
+function ImageCard({
+  image,
+  job,
+  setJob,
+  analysis,
+}: {
+  image: ImageInfo;
+  job: Job;
+  setJob: (j: Job) => void;
+  analysis: Analysis;
+}) {
   const latest = useRef<Job>(job);
   latest.current = job;
 
@@ -123,6 +142,13 @@ function ImageCard({ image, job, setJob }: { image: ImageInfo; job: Job; setJob:
           </div>
         ))}
       </dl>
+
+      <div className="border-b border-line p-5">
+        <h3 className="mb-3 text-[13.5px] font-semibold">Partitions &amp; filesystems</h3>
+        {analysis.status === "loading" && <p className="text-[12.5px] text-muted">Reading partition table…</p>}
+        {analysis.status === "error" && <ErrorBanner message={analysis.message} />}
+        {analysis.status === "ready" && <VolumeLayout analysis={analysis.data} diskSize={image.size_bytes} />}
+      </div>
 
       <div className="p-5">
         <h3 className="text-[13.5px] font-semibold">Fingerprint</h3>

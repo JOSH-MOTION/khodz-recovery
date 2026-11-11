@@ -1,5 +1,25 @@
 # Khodz Recovery — Testing Strategy
 
+## Stage 4 additions (Windows 11 x64, 2026-11-11)
+
+| Suite | Result |
+|---|---|
+| `cargo test -p khodz-core` (adds bounds-checked byte readers) | 11 passed |
+| `cargo test -p khodz-part` (GUIDs, type names; 10 spec-built tables: MBR/EBR, EBR loop, overlaps, superfloppy, GPT 512/4096, damaged primary → backup, wiped primary + MBR, corrupt entry array, damaged backup, hostile header values) | 12 passed |
+| `cargo test -p khodz-fs` unit (DOS/FILETIME, FAT LFN + deleted-name recovery, exFAT entry sets + checksums, NTFS runlists incl. hostile ones, fixups/torn records) | 11 passed |
+| `cargo test -p khodz-fs --test windows_fixtures -- --ignored` (Windows-built images) | 1 passed: 4 images, 6 volumes, 48 live files byte-identical, 14 deleted files discovered, images unchanged |
+| `cargo test -p khodz-recovery -- --include-ignored` (adds image analysis incl. fixture) | 11 passed |
+| `npm test` (adds partition/filesystem layout view) | 29 passed |
+| clippy `-D warnings` workspace (overflow lint on all parsers) | clean |
+
+**Fixtures:** `fixtures/windows/make-fixtures.ps1` (run once as Administrator) uses diskpart and
+Windows' own FAT32/exFAT/NTFS formatters on VHDs mounted into folders (no drive letters), writes
+deterministic files, deletes some, detaches and strips the VHD footer. `fixtures/out/manifest.json`
+records Windows' view of partitions and every file's SHA-256. Images are git-ignored and marked
+read-only. Tests needing them are `#[ignore]`d so a fresh checkout's `cargo test` passes.
+
+Not yet: FAT12/16 and HFS+/APFS fixtures; fuzzing.
+
 ## Stage 3 additions (Windows 11 x64, 2026-11-11)
 
 | Suite | Result |

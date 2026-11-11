@@ -121,6 +121,68 @@ export interface ImageInfo {
   file_read_only: boolean;
 }
 
+// Mirrors crates/khodz-part and crates/khodz-fs (serialized via app/src-tauri/src/images.rs)
+export type TableKind = "mbr" | "gpt" | "none" | "unknown";
+export type FsKind =
+  | "fat12"
+  | "fat16"
+  | "fat32"
+  | "ex_fat"
+  | "ntfs"
+  | "hfs_plus"
+  | "hfsx"
+  | "apfs"
+  | "bit_locker"
+  | "ext"
+  | "unknown";
+
+export interface PartitionInfo {
+  number: number;
+  offset: number;
+  size: number;
+  type_name: string;
+  mbr_type: number | null;
+  gpt_type: string | null;
+  gpt_id: string | null;
+  name: string | null;
+  bootable: boolean;
+  logical: boolean;
+}
+
+export interface PartitionTable {
+  kind: TableKind;
+  sector_size: number;
+  disk_signature: number | null;
+  disk_guid: string | null;
+  partitions: PartitionInfo[];
+  warnings: string[];
+}
+
+export interface FsInfo {
+  kind: FsKind;
+  label: string | null;
+  serial: string | null;
+  cluster_size: number | null;
+  sector_size: number | null;
+  volume_size: number | null;
+  encrypted: boolean;
+  notes: string[];
+}
+
+export interface VolumeAnalysis {
+  partition: number | null;
+  offset: number;
+  size: number;
+  type_name: string;
+  fs: FsInfo;
+  walkable: boolean;
+}
+
+export interface ImageAnalysis {
+  table: PartitionTable;
+  volumes: VolumeAnalysis[];
+}
+
 export interface JobProgress {
   bytes_done: number;
   bytes_total: number;

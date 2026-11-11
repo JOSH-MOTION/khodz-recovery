@@ -1,0 +1,18 @@
+[package]
+name = "khodz-part"
+description = "MBR/EBR/GPT partition table parsing for Khodz Recovery"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+khodz-core = { path = "../khodz-core" }
+khodz-io = { path = "../khodz-io" }
+crc32fast = "1"
+serde = { version = "1.0.229", features = ["derive"] }
+
+[dev-dependencies]
+crc32fast = "1"

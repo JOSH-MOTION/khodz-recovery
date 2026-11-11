@@ -31,6 +31,7 @@ pub fn run() {
             commands::list_recoveries,
             commands::list_devices,
             images::inspect_image,
+            images::analyze_image,
             images::fingerprint_image,
             images::cancel_job,
         ])

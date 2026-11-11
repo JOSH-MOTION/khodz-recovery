@@ -1,6 +1,14 @@
 [workspace]
 resolver = "3"
-members = ["crates/khodz-core", "crates/khodz-db", "crates/khodz-device", "crates/khodz-io","app/src-tauri"]
+members = [
+    "crates/khodz-core",
+    "crates/khodz-db",
+    "crates/khodz-device",
+    "crates/khodz-io",
+    "crates/khodz-part",
+    "crates/khodz-fs",
+    "app/src-tauri",
+]
 
 [workspace.package]
 version = "0.1.0"

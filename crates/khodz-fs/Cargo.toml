@@ -1,0 +1,19 @@
+[package]
+name = "khodz-fs"
+description = "Filesystem detection and metadata walking (FAT12/16/32, exFAT, NTFS; HFS+/APFS detection) for Khodz Recovery"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+khodz-core = { path = "../khodz-core" }
+khodz-io = { path = "../khodz-io" }
+serde = { version = "1.0.229", features = ["derive"] }
+
+[dev-dependencies]
+khodz-part = { path = "../khodz-part" }
+serde_json = "1.0.154"
+sha2 = "0.11.0"

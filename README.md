@@ -3,9 +3,10 @@
 Open-source data recovery for Windows and macOS. Rust engine, Tauri 2 desktop shell, React +
 TypeScript + Tailwind UI, SQLite for scan and recovery history.
 
-> **Status: early development (Stage 3 of 9).** The application shell, database, drive
-> detection and read-only image access (open + SHA-256 fingerprint) work on Windows; macOS code
-> compiles but is pending a run on real hardware.
+> **Status: early development (Stage 4 of 9).** Drive detection, read-only image access,
+> partition tables (MBR/GPT) and FAT32/exFAT/NTFS metadata parsing — including discovery of
+> deleted files — work and are verified on Windows against Windows-formatted disks. Scanning and
+> recovery UI are not built yet; HFS+/APFS are detection-only.
 > Scanning and recovery are **not implemented yet** — see
 > [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Do not use it on data you care about yet.
 
@@ -22,6 +23,9 @@ crates/khodz-core   shared types, errors, cancellation, progress (no I/O)
 crates/khodz-db     SQLite schema, migrations, repositories
 crates/khodz-device drive and volume discovery (Windows IOCTLs / macOS diskutil)
 crates/khodz-io     read-only block access: images, raw devices, cache, bad-sector tolerance
+crates/khodz-part   MBR/EBR/GPT partition tables
+crates/khodz-fs     filesystem detection; FAT/exFAT/NTFS metadata walking (live + deleted)
+fixtures/windows    generator for Windows-formatted test images (run as Administrator)
 app/                React + TypeScript + Tailwind frontend (Vite)
 app/src-tauri       Tauri 2 shell (thin IPC layer)
 ```

@@ -28,7 +28,7 @@ Vite 8.3, Tailwind 4.3, TypeScript 7.0, Vitest 5.1.
 | 1 | Foundation | Cargo workspace builds; `khodz-core`, `khodz-db` with migrations + unit tests; Tauri 2 app launches; React shell with sidebar nav (Drives, Disk Images, Results, Recovery, History, Settings), dark/light/system theme, Tailwind tokens; `cargo test` + `npm test` + `tsc --noEmit` green on Windows | ☑ Windows (2026-11-11) · macOS unverified |
 | 2 | Device discovery | Lists physical disks + volumes with size/model/bus/removable on Windows; macOS module compiles and is tested in CI; UI drive cards from real data (no mocks) | ☑ Windows (2026-11-11) · macOS: parser unit-tested + cross-compiled, **not yet run on a Mac** |
 | 3 | Read-only access + images | `BlockSource` for images, Windows drives, macOS rdisk; bounded cache; cancellation; disconnect → `DeviceLost`; source-unchanged hash test | ☑ Windows images + raw devices (2026-11-11; elevated read verified on a USB stick, unelevated denial verified) · macOS: compiles only |
-| 4 | Partitions + FS parsing | MBR/GPT; probe+walk for FAT32, exFAT, NTFS, HFS+, APFS (live files); fixture images per FS | ☐ |
+| 4 | Partitions + FS parsing | MBR/GPT; probe+walk for FAT32, exFAT, NTFS, HFS+, APFS (live files); fixture images per FS | ◐ MBR/GPT + FAT32/exFAT/NTFS ☑ verified on Windows-built images (2026-11-11) · HFS+/APFS detection only — walking needs a Mac for fixtures |
 | 5 | Quick + deep scan | Deleted-entry discovery (NTFS, FAT32, exFAT first); carving for JPEG/PNG/GIF/PDF/ZIP-family/MP4/MOV/MP3/WAV with validators; fragmentation honesty tests | ☐ |
 | 6 | Results explorer + preview | Virtualised tree/list from paged DB; filters; image/text/hex preview (preview reads ≤ 8 MiB) | ☐ |
 | 7 | Recovery + integrity | Destination validation incl. same-disk refusal; streaming copy + SHA-256 verify; manifest; recovery history | ☐ |
@@ -36,6 +36,41 @@ Vite 8.3, Tailwind 4.3, TypeScript 7.0, Vitest 5.1.
 | 9 | Installers + CI matrix | MSI/NSIS on Windows; `.dmg` on macOS (unsigned unless credentials supplied); GitHub Actions matrix running the full regression suite | ☐ |
 
 Each stage: implement → run tests → fix → update docs → only then continue.
+
+## Stage 4 — delivered (partially; see status)
+
+- `crates/khodz-core::bytes`: bounds-checked LE/BE readers and UTF-16 decoding used by every parser.
+- `crates/khodz-part`: MBR + EBR chain (loop detection, 128-entry cap), GPT at 512/4096-byte
+  sectors with header and entry-array CRC32 checks, backup-header fallback and reporting,
+  superfloppy detection, overlap / past-end warnings. Partitions are never silently dropped.
+- `crates/khodz-fs`: `detect()` for FAT12/16/32, exFAT, NTFS, HFS+/HFSX, APFS, BitLocker, ext;
+  `open()` + `walk()` for FAT12/16/32, exFAT and NTFS, reporting live **and** deleted entries
+  with extents and an `ExtentQuality` (exact / contiguity assumed / partial).
+  - FAT: LFN assembly with checksum; deleted LFN names recovered by brute-forcing the lost
+    first byte against the checksum; FAT32 deleted high-word reconstruction; deleted folders
+    followed only if their `.`/`..` entries validate.
+  - exFAT: entry sets with checksum (including deleted sets, with in-use bits restored),
+    NoFatChain contiguity.
+  - NTFS: full MFT scan with fixups, runlist decoding (negative/sparse runs), path rebuild via
+    parent references with sequence checks and `/$Orphan`, `$Extend\$Deleted` pending deletes.
+- Fixture generator `fixtures/windows/make-fixtures.ps1` (needs one admin prompt) builds 4 images
+  with Windows' own diskpart/format: MBR+FAT32, GPT+exFAT, GPT+NTFS, MBR with extended partition
+  holding NTFS + exFAT; Unicode names, empty and fragmented files, deleted files and a deleted folder.
+- App: opening an image now shows its partition table, a partition map and each volume's
+  filesystem, label, cluster size and an honest status (Readable / Detected only / Encrypted).
+- Tool: `cargo run -p khodz-fs --example walk -- <image>` lists every entry.
+
+Verified: all 4 Windows-built images — partition layouts, disk signatures/GUIDs, volume labels,
+48 live files byte-for-byte (SHA-256) including fragmented ones, 14 deleted files discovered,
+images unchanged. In the app, `mbr-multi.img` shows the 3 volumes and the disk signature Windows
+reported (E0BA3D87).
+
+Real-world findings recorded in SUPPORTED_FILESYSTEMS.md: TRIM zeroes deleted data on the
+fixture VHDs (as on SSDs); NTFS pending deletes in `$Extend\$Deleted`; FAT32 high-word clearing.
+
+Remaining for Stage 4: HFS+ catalog and APFS object-map/fs-tree walkers (+ macOS fixtures via
+`hdiutil`), FAT12/16 fixtures, NTFS `$ATTRIBUTE_LIST` following and `$MFTMirr` fallback, and
+fuzz targets for every parser (planned exit criterion, not done yet).
 
 ## Stage 3 — delivered
 

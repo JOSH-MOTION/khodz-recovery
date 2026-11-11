@@ -3,6 +3,7 @@
 //! This crate performs no I/O. It defines the error type, size/alignment helpers,
 //! cooperative cancellation and progress throttling used by every engine crate.
 
+pub mod bytes;
 pub mod cancel;
 pub mod error;
 pub mod progress;
