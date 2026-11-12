@@ -32,6 +32,9 @@ export interface Recovery {
   files_verified: number;
   files_failed: number;
   bytes_written: number;
+  files_partial: number;
+  files_mismatch: number;
+  same_disk_override: boolean;
 }
 
 export interface Page {
@@ -286,6 +289,73 @@ export interface ScanItemDetail extends ScanItemRow {
   extents: [number | null, number][];
   resident: number[] | null;
   created_at: number | null;
+}
+
+// Recovery (crates/khodz-recover, app/src-tauri/src/recovery.rs)
+export type SelectionPart =
+  | { kind: "items"; ids: number[] }
+  | { kind: "folder"; scope: Scope; dir: string; view: ItemView };
+
+export interface SelectionSummary {
+  files: number;
+  bytes: number;
+  erased: number;
+  partial: number;
+}
+
+export interface DestinationCheck {
+  destination: string;
+  dest_disks: string[];
+  source_disks: string[];
+  same_disk: boolean;
+  free_bytes: number | null;
+  required_bytes: number;
+  problems: string[];
+  warnings: string[];
+}
+
+export interface DestinationReport {
+  summary: SelectionSummary;
+  check: DestinationCheck | null;
+}
+
+export interface RecoveryProgress {
+  files_done: number;
+  files_total: number;
+  bytes_done: number;
+  bytes_total: number;
+  current: string | null;
+}
+
+export interface RecoverySummary {
+  files_total: number;
+  verified: number;
+  mismatched: number;
+  partial: number;
+  failed: number;
+  bytes_written: number;
+  stopped: string | null;
+}
+
+export interface RecoveryOutcome {
+  recovery_id: number;
+  status: RecoveryStatus;
+  session_dir: string;
+  summary: RecoverySummary;
+  error: string | null;
+}
+
+export type RecoveryOutcomeKind = "verified" | "mismatch" | "partial_source" | "failed";
+
+export interface RecoveryItemRow {
+  id: number;
+  scan_item_id: number | null;
+  source_path: string | null;
+  output_path: string;
+  size: number;
+  sha256: string | null;
+  outcome: RecoveryOutcomeKind;
+  error: string | null;
 }
 
 export type SettingKey = "theme" | "allow_same_disk_recovery" | "last_destination";

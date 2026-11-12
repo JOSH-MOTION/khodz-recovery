@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Permissions for the main window. Keep minimal: no fs/shell plugins.",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-set-theme", "dialog:allow-open"]
+  "permissions": ["core:default", "core:window:allow-set-theme", "dialog:allow-open", "opener:allow-reveal-item-in-dir"]
 }

@@ -90,6 +90,10 @@ pub struct Recovery {
     pub files_verified: u64,
     pub files_failed: u64,
     pub bytes_written: u64,
+    pub files_partial: u64,
+    pub files_mismatch: u64,
+    /// The user explicitly allowed writing to the same physical disk as a live source.
+    pub same_disk_override: bool,
 }
 
 /// Final counters reported when a recovery job ends.
@@ -99,6 +103,33 @@ pub struct RecoveryTotals {
     pub files_verified: u64,
     pub files_failed: u64,
     pub bytes_written: u64,
+    pub files_partial: u64,
+    pub files_mismatch: u64,
+}
+
+/// One recovered (or failed) file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NewRecoveryItem {
+    pub scan_item_id: Option<i64>,
+    /// Relative to the recovery's session folder; empty when nothing was written.
+    pub output_path: String,
+    pub size: u64,
+    pub sha256: Option<String>,
+    /// `verified`, `mismatch`, `partial_source` or `failed`.
+    pub outcome: String,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RecoveryItemRow {
+    pub id: i64,
+    pub scan_item_id: Option<i64>,
+    pub source_path: Option<String>,
+    pub output_path: String,
+    pub size: u64,
+    pub sha256: Option<String>,
+    pub outcome: String,
+    pub error: Option<String>,
 }
 
 /// Bounded page request. `limit` is clamped to [`Page::MAX_LIMIT`].

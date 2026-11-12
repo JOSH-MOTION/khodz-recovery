@@ -31,11 +31,53 @@ Vite 8.3, Tailwind 4.3, TypeScript 7.0, Vitest 5.1.
 | 4 | Partitions + FS parsing | MBR/GPT; probe+walk for FAT32, exFAT, NTFS, HFS+, APFS (live files); fixture images per FS | ◐ MBR/GPT + FAT32/exFAT/NTFS ☑ verified on Windows-built images (2026-11-11) · HFS+/APFS detection only — walking needs a Mac for fixtures |
 | 5 | Quick + deep scan | Deleted-entry discovery (NTFS, FAT32, exFAT first); carving for JPEG/PNG/GIF/PDF/ZIP-family/MP4/MOV/MP3/WAV with validators; fragmentation honesty tests | ☑ Windows, images (2026-11-11) · live-drive scans need the app run as Administrator (helper not built) · MP3 not carved |
 | 6 | Results explorer + preview | Virtualised tree/list from paged DB; filters; image/text/hex preview (preview reads ≤ 8 MiB) | ☑ Windows (2026-11-11) · paged rather than virtualised lists · image previews read ≤ 32 MiB |
-| 7 | Recovery + integrity | Destination validation incl. same-disk refusal; streaming copy + SHA-256 verify; manifest; recovery history | ☐ |
+| 7 | Recovery + integrity | Destination validation incl. same-disk refusal; streaming copy + SHA-256 verify; manifest; recovery history | ☑ Windows, images (2026-11-12) · same-disk detection for live drives verified on this PC's disks · macOS path compiles only |
 | 8 | Partition analysis | Lost partition search, overlapping/conflicting table reporting, scan of found partitions | ☐ |
 | 9 | Installers + CI matrix | MSI/NSIS on Windows; `.dmg` on macOS (unsigned unless credentials supplied); GitHub Actions matrix running the full regression suite | ☐ |
 
 Each stage: implement → run tests → fix → update docs → only then continue.
+
+## Stage 7 — delivered
+
+- `crates/khodz-recover`:
+  - **Destination check**: the folder must exist and pass a create/delete write probe, and free
+    space must be ≥ the bytes to write + 64 MiB. For live-drive sources the destination's
+    physical disks are compared with the source's (Windows: volume → disk extents IOCTL;
+    macOS: `diskutil info -plist`, incl. APFS physical stores). Same disk → refused unless the
+    user ticks an explicit override, which is stored with the recovery. If the disks cannot be
+    determined for a live source, recovery is refused rather than guessed.
+  - **Writer**: every run goes into a new `Khodz Recovery <date time>` folder, grouped per
+    volume (`Label (FS)`) and `Found by signature`. Names are sanitised per component
+    (reserved names, forbidden/control chars, trailing dots, 120-char cap) and can never escape
+    the folder. Files are created with `create_new` (" (n)" suffix on clashes, never
+    overwrite), streamed in 1 MiB chunks with SHA-256, `fsync`ed, given the original modified
+    time, then **re-read from the destination and compared**.
+  - **Outcomes**: *verified*, *partial_source* (written, but the source data was known
+    incomplete or had unreadable sectors — zero-filled and stated), *mismatch* (read-back
+    differs) and *failed* (erased data is never written as a file of zeros). Device loss or
+    cancel stops the run and removes the half-written file; a full disk stops it with a reason.
+- `khodz-db` schema v4: recovery counts for partial/mismatch, same-disk override flag, per-file
+  `recovery_items` (output path, size, SHA-256, outcome, note) indexed by recovery; recursive,
+  view-aware folder selection.
+- App: `check_recovery`, `start_recovery` (progress channel, cancellable), `get_recovery`,
+  `list_recovery_items`. The source is re-opened and refused if its size changed since the
+  scan. `khodz-manifest.json` (per-file SHA-256 + outcome, summary, override flag) is written
+  next to the files.
+- UI: checkboxes on files and folders (a ticked folder covers everything under it in the
+  current view), "All in folder", a selection bar, the Recover dialog (summary, erased-file
+  note, folder picker, live destination check, same-disk warning with explicit override), the
+  Recovery page (live progress + cancel, report with per-file results and notes, "Show in
+  folder"), and History showing incomplete and failed counts.
+
+Verified end to end: the fixture test recovers all 24 live files of the three Windows-built
+volumes plus the carved files; each matches its original SHA-256, erased files produce no
+output and the source image is byte-identical afterwards. In the real app: a quick scan of
+`mbr-multi.img`, two whole volumes ticked, recovery through the native folder picker → 16
+files verified (independently re-hashed against the fixture manifest: 16/16 match), 5 erased
+files reported as not recovered, manifest written, source hash unchanged.
+
+Known gaps: a file that was not recovered is listed by its source path, without its volume.
+Recovering from a live drive needs the app running as Administrator, like scanning.
 
 ## Stage 6 — delivered
 

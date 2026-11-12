@@ -1,5 +1,17 @@
 # Khodz Recovery — Testing Strategy
 
+## Stage 7 additions (Windows 11 x64, 2026-11-12)
+
+| Suite | Result |
+|---|---|
+| `cargo test -p khodz-recover` (name sanitising incl. reserved names/traversal/length, session folder naming + uniqueness; destination checks: missing folder, not enough space, same-disk only for live sources; real path → physical-disk mapping on this PC; writer: fragmented/sparse/resident files verified, never overwrite, erased/partial/short items reported honestly, unreadable sectors zero-filled and flagged, source loss + cancel abort and remove the partial file, progress) | 14 passed |
+| `cargo test -p khodz-recover --test fixtures_end_to_end -- --ignored` (**24 live files of 3 Windows-built volumes + carved files recovered; every one matches the original SHA-256**; fragmented/truncated carved files come out as partial; erased files produce no file; source unchanged) | 1 passed |
+| `cargo test -p khodz-db` (adds schema v4, recovery items, problems-first ordering, recursive view-aware folder selection) | 28 passed |
+| `cargo test -p khodz-recovery -- --include-ignored` (adds whole-volume recovery via the command layer with Unicode names, manifest + history rows, second run → new session folder, same-disk device refusal, empty selection rejected without a history row) | 18 passed |
+| `npm test` (adds selection: files, folders, folder coverage, all-in-folder, clear; Recover dialog: exact selection sent, destination required, problems block, same-disk needs explicit override, erased note; Recovery page: empty state, live progress + cancel → report, per-file outcomes, show in folder, start errors) | 59 passed |
+| Workspace `cargo test --workspace -- --include-ignored` excluding the admin-only device test | 152 passed |
+| Real app (UI Automation + native folder dialog) | quick scan of `mbr-multi.img` → 2 volumes recovered: 16 verified, 5 erased not written; 16/16 re-hashed match the fixture manifest; source SHA-256 unchanged |
+
 ## Stage 6 additions (Windows 11 x64, 2026-11-11)
 
 | Suite | Result |

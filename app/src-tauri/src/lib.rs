@@ -3,6 +3,7 @@
 
 mod commands;
 mod images;
+mod recovery;
 mod scans;
 mod state;
 
@@ -13,6 +14,7 @@ use crate::state::AppState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -42,6 +44,10 @@ pub fn run() {
             scans::read_item_data,
             scans::list_volumes,
             scans::list_folder,
+            recovery::check_recovery,
+            recovery::start_recovery,
+            recovery::list_recovery_items,
+            recovery::get_recovery,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start Khodz Recovery");

@@ -112,6 +112,7 @@ function RecoveryTable({ recoveries }: { recoveries: Recovery[] }) {
             <th className={th}>Destination</th>
             <th className={th}>Status</th>
             <th className={th}>Verified</th>
+            <th className={th}>Incomplete</th>
             <th className={th}>Failed</th>
             <th className={th}>Written</th>
             <th className={th}>Started</th>
@@ -127,7 +128,13 @@ function RecoveryTable({ recoveries }: { recoveries: Recovery[] }) {
               <td className={`${td} tabular-nums`}>
                 {r.files_verified} / {r.files_total}
               </td>
-              <td className={`${td} tabular-nums ${r.files_failed > 0 ? "text-danger" : ""}`}>{r.files_failed}</td>
+              <td className={`${td} tabular-nums ${r.files_partial > 0 ? "text-warn" : ""}`}>{r.files_partial}</td>
+              <td
+                className={`${td} tabular-nums ${r.files_failed + r.files_mismatch > 0 ? "text-danger" : ""}`}
+                title={r.files_mismatch > 0 ? `${r.files_mismatch} failed verification after writing` : undefined}
+              >
+                {r.files_failed + r.files_mismatch}
+              </td>
               <td className={`${td} tabular-nums`}>{formatBytes(r.bytes_written)}</td>
               <td className={`${td} text-muted`}>{formatDateTime(r.started_at)}</td>
             </tr>

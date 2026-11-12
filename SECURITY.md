@@ -65,11 +65,23 @@ Every byte read from a disk is attacker-controlled (a crafted USB stick is a rea
 - Previews are rendered from size-capped buffers; images are decoded in Rust or by the webview from
   a blob — never written to disk, never executed. HTML/SVG/scripts are previewed as text only.
 
-## Recovered-file handling
+## Recovered-file handling (Stage 7)
 
-- Output names are sanitised (no path separators, reserved Windows names, control chars) and
-  confined to the chosen destination directory (no `..` traversal from on-disk names).
-- Existing files are never overwritten.
+- Output names are sanitised per path component (path separators, reserved Windows names such
+  as `CON`/`COM1`, forbidden and control characters, trailing dots/spaces, `.`/`..`, length
+  cap) and every output path is built from plain components only, so on-disk names cannot
+  escape the chosen destination.
+- Existing files are never overwritten: each run creates a new session folder and every file
+  is created with `create_new`, adding " (n)" on clashes.
+- The destination must be on a different physical disk from a live source. The check uses the
+  OS's volume → disk mapping; if it cannot be determined, recovery is refused. The user can
+  override it only by ticking an explicit acknowledgement, and the override is stored in the
+  history and the manifest.
+- The source is only ever read (same read-only path as scanning) and is re-opened and refused
+  if its size changed since the scan.
+- Every written file is `fsync`ed, re-read and compared by SHA-256. Unreadable source sectors
+  are zero-filled and the file is marked incomplete, never verified. Erased data is not
+  written at all.
 
 ## Reporting vulnerabilities
 

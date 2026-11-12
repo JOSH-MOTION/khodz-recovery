@@ -193,22 +193,10 @@ pub fn run_scan(
 /// Maximum bytes returned for one preview request.
 const PREVIEW_MAX: usize = 32 << 20;
 
-/// Read part of a scan item's data from its (read-only) source.
-pub fn read_item_impl(
-    state: &AppState,
-    item_id: i64,
-    offset: u64,
-    len: usize,
-) -> Result<Vec<u8>, CommandError> {
-    let (detail, scan) = {
-        let db = state.db()?;
-        let d = db.get_scan_item(item_id)?;
-        let s = db.get_scan(d.scan_id)?;
-        (d, s)
-    };
-    if detail.row.is_dir {
-        return Err(CommandError { kind: "invalid_request", message: "folders have no data".into() });
-    }
+/// Re-open a scan's source read-only, refusing if it is no longer the same size as when it
+/// was scanned (a different or modified medium would make every stored extent wrong).
+pub fn open_source_for_scan(state: &AppState, scan_id: i64) -> Result<Box<dyn BlockSource>, CommandError> {
+    let scan = state.db()?.get_scan(scan_id)?;
     let source = match scan.source_kind {
         SourceKind::Image => ScanSource::Image { path: scan.source_path.clone() },
         _ => ScanSource::Device { path: scan.source_path.clone(), label: None },
@@ -225,6 +213,21 @@ pub fn read_item_impl(
             ),
         });
     }
+    Ok(src)
+}
+
+/// Read part of a scan item's data from its (read-only) source.
+pub fn read_item_impl(
+    state: &AppState,
+    item_id: i64,
+    offset: u64,
+    len: usize,
+) -> Result<Vec<u8>, CommandError> {
+    let detail = state.db()?.get_scan_item(item_id)?;
+    if detail.row.is_dir {
+        return Err(CommandError { kind: "invalid_request", message: "folders have no data".into() });
+    }
+    let src = open_source_for_scan(state, detail.scan_id)?;
     let extents: Vec<khodz_engine::AbsExtent> =
         detail.extents.iter().map(|&(offset, len)| khodz_engine::AbsExtent { offset, len }).collect();
     Ok(khodz_engine::read_item_range(

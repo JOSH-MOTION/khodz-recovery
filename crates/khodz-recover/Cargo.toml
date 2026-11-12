@@ -1,0 +1,33 @@
+[package]
+name = "khodz-recover"
+description = "Safe recovery: destination validation, verified writing and manifests for Khodz Recovery"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+khodz-core = { path = "../khodz-core" }
+khodz-io = { path = "../khodz-io" }
+khodz-engine = { path = "../khodz-engine" }
+serde = { version = "1.0.229", features = ["derive"] }
+sha2 = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+plist = "1"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+serde_json = "1.0.154"
+sha2 = "0.10"

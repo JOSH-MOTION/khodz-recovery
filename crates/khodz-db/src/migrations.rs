@@ -105,6 +105,13 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_scan_volumes ON scan_volumes(scan_id);
     "#,
+    // v4 — richer recovery history (Stage 7)
+    r#"
+    ALTER TABLE recoveries ADD COLUMN files_partial      INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE recoveries ADD COLUMN files_mismatch     INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE recoveries ADD COLUMN same_disk_override INTEGER NOT NULL DEFAULT 0;
+    CREATE INDEX idx_recovery_items ON recovery_items(recovery_id);
+    "#,
 ];
 
 pub const LATEST: u32 = MIGRATIONS.len() as u32;

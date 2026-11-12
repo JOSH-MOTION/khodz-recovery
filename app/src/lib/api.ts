@@ -1,12 +1,18 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type {
   AppInfo,
   CommandError,
   FingerprintResult,
   ImageAnalysis,
   ImageInfo,
+  DestinationReport,
   FolderListing,
+  RecoveryItemRow,
+  RecoveryOutcome,
+  RecoveryProgress,
+  SelectionPart,
   ItemFilter,
   ItemPage,
   ItemStats,
@@ -70,6 +76,37 @@ export const api = {
   listFolder: (scanId: number, scope: Scope, dir: string, view: ItemView, page: Page) =>
     invoke<FolderListing>("list_folder", { scanId, scope, dir, view, page }),
   getScanItem: (id: number) => invoke<ScanItemDetail>("get_scan_item", { id }),
+
+  /** Native folder picker for the recovery destination. Null if cancelled. */
+  pickFolder: async (): Promise<string | null> => {
+    const picked = await open({ title: "Choose where to save recovered files", directory: true, multiple: false });
+    return typeof picked === "string" ? picked : null;
+  },
+  checkRecovery: (scanId: number, selection: SelectionPart[], destination: string | null) =>
+    invoke<DestinationReport>("check_recovery", { scanId, selection, destination }),
+  startRecovery: (
+    scanId: number,
+    selection: SelectionPart[],
+    destination: string,
+    allowSameDisk: boolean,
+    jobId: string,
+    onProgress: (p: RecoveryProgress) => void,
+  ) => {
+    const channel = new Channel<RecoveryProgress>();
+    channel.onmessage = onProgress;
+    return invoke<RecoveryOutcome>("start_recovery", {
+      scanId,
+      selection,
+      destination,
+      allowSameDisk,
+      jobId,
+      onProgress: channel,
+    });
+  },
+  getRecovery: (recoveryId: number) => invoke<Recovery>("get_recovery", { recoveryId }),
+  listRecoveryItems: (recoveryId: number, page: Page) =>
+    invoke<RecoveryItemRow[]>("list_recovery_items", { recoveryId, page }),
+  showInFolder: (path: string) => revealItemInDir(path),
   /** Raw bytes of an item (read-only, from the scanned source), as an ArrayBuffer. */
   readItemData: async (itemId: number, offset: number, len: number): Promise<Uint8Array> => {
     const buf = await invoke<ArrayBuffer | number[]>("read_item_data", { itemId, offset, len });

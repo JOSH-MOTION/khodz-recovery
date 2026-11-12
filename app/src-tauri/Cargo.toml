@@ -21,10 +21,12 @@ khodz-engine = { version = "0.1.0", path = "../../crates/khodz-engine" }
 khodz-fs = { version = "0.1.0", path = "../../crates/khodz-fs" }
 khodz-io = { version = "0.1.0", path = "../../crates/khodz-io" }
 khodz-part = { version = "0.1.0", path = "../../crates/khodz-part" }
+khodz-recover = { version = "0.1.0", path = "../../crates/khodz-recover" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tauri = { version = "2.11.6", features = [] }
 tauri-plugin-dialog = "2.7.3"
+tauri-plugin-opener = "2.5.5"
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }

@@ -198,6 +198,34 @@ impl Database {
         Ok(rows)
     }
 
+    /// Ids of every file the view shows under `dir` (recursively) within `scope` — what
+    /// "recover this folder" means.
+    pub fn folder_item_ids(
+        &self,
+        scan_id: i64,
+        scope: Scope,
+        dir: &str,
+        view: ItemView,
+    ) -> DbResult<Vec<i64>> {
+        let (lo, hi) = path_range(dir);
+        let (scope_sql, scope_arg) = scope_condition(scope);
+        let sql = format!(
+            "SELECT id FROM scan_items WHERE scan_id = ?1 AND path >= ?2 AND path < ?3 AND is_dir = 0{}{scope_sql}
+             ORDER BY path",
+            view_condition(view)
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let ids = match scope_arg {
+            Some(o) => {
+                stmt.query_map(params![scan_id, lo, hi, o], |r| r.get(0))?.collect::<Result<Vec<i64>, _>>()?
+            }
+            None => {
+                stmt.query_map(params![scan_id, lo, hi], |r| r.get(0))?.collect::<Result<Vec<i64>, _>>()?
+            }
+        };
+        Ok(ids)
+    }
+
     /// Files directly inside `dir` within `scope`, paged, plus the total count.
     pub fn list_files(
         &self,
@@ -323,6 +351,16 @@ mod tests {
         assert_eq!(root.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["docs"]);
         let sub = db.list_folders(id, Scope::Volume { offset: 0 }, "/docs", ItemView::Deleted).unwrap();
         assert_eq!(sub.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["50%"]);
+    }
+
+    #[test]
+    fn folder_selection_is_recursive_and_view_aware() {
+        let (db, id) = setup();
+        let v0 = Scope::Volume { offset: 0 };
+        assert_eq!(db.folder_item_ids(id, v0, "/docs", ItemView::AllFiles).unwrap().len(), 4);
+        assert_eq!(db.folder_item_ids(id, v0, "/docs", ItemView::Deleted).unwrap().len(), 2);
+        assert_eq!(db.folder_item_ids(id, v0, "/", ItemView::AllFiles).unwrap().len(), 6);
+        assert_eq!(db.folder_item_ids(id, Scope::Carved, "/", ItemView::AllFiles).unwrap().len(), 1);
     }
 
     #[test]

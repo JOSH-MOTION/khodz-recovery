@@ -7,6 +7,8 @@ import type { ItemStats, ItemView, Scan, ScanItemRow, ScanPhase } from "../lib/t
 import { Button, Card, EmptyState, ErrorBanner, PageHeader, StatusPill } from "../components/ui";
 import { Explorer } from "../components/Explorer";
 import { PreviewPane } from "../components/PreviewPane";
+import { RecoverDialog } from "../components/RecoverDialog";
+import { useSelection, type Selection } from "../lib/selection";
 
 export { itemStatus } from "../lib/itemStatus";
 
@@ -77,12 +79,14 @@ function SearchResults({
   view,
   search,
   selected,
+  selection,
   onSelect,
 }: {
   scanId: number;
   view: ItemView;
   search: string;
   selected: ScanItemRow | null;
+  selection: Selection;
   onSelect: (r: ScanItemRow) => void;
 }) {
   const [items, setItems] = useState<ScanItemRow[]>([]);
@@ -121,6 +125,14 @@ function SearchResults({
                 selected?.id === r.id ? "bg-accent-soft" : "hover:bg-surface-2/60"
               }`}
             >
+              <input
+                type="checkbox"
+                aria-label={`Select ${r.name}`}
+                checked={selection.items.has(r.id)}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() => selection.toggleItem(r)}
+                className="h-4 w-4 shrink-0 accent-[var(--k-accent)]"
+              />
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{r.name}</span>
                 <span className="block truncate text-[12px] text-muted">
@@ -156,8 +168,10 @@ function SearchResults({
   );
 }
 
-export function ResultsPage() {
+export function ResultsPage({ onRecoveryStarted }: { onRecoveryStarted?: () => void } = {}) {
   const { active, lastOutcome, lastError } = useScan();
+  const selection = useSelection();
+  const [recovering, setRecovering] = useState(false);
   const [scans, setScans] = useState<Scan[]>([]);
   const [scanId, setScanId] = useState<number | null>(null);
   const [view, setView] = useState<ItemView>("all_files");
@@ -186,6 +200,7 @@ export function ResultsPage() {
   useEffect(() => {
     if (scanId === null) return;
     setSelected(null);
+    selection.clear();
     api
       .scanItemStats(scanId)
       .then(setStats)
@@ -269,14 +284,62 @@ export function ResultsPage() {
 
             <div className="flex min-h-[460px] flex-1 gap-4">
               {debounced ? (
-                <SearchResults scanId={scan.id} view={view} search={debounced} selected={selected} onSelect={setSelected} />
+                <SearchResults
+                  scanId={scan.id}
+                  view={view}
+                  search={debounced}
+                  selected={selected}
+                  selection={selection}
+                  onSelect={setSelected}
+                />
               ) : (
-                <Explorer scanId={scan.id} view={view} carvedCount={stats?.carved ?? 0} selected={selected} onSelect={setSelected} />
+                <Explorer
+                  scanId={scan.id}
+                  view={view}
+                  carvedCount={stats?.carved ?? 0}
+                  selected={selected}
+                  selection={selection}
+                  onSelect={setSelected}
+                />
               )}
               <aside aria-label="Preview" className="w-[360px] shrink-0 overflow-hidden rounded-xl border border-line bg-surface xl:w-[420px]">
                 <PreviewPane item={selected} />
               </aside>
             </div>
+
+            <div
+              role="region"
+              aria-label="Selection"
+              className="flex items-center justify-between gap-4 rounded-xl border border-line bg-surface px-4 py-3"
+            >
+              <span className="text-[13px] text-muted">
+                {selection.empty
+                  ? "Tick files or folders to recover them."
+                  : `${selection.items.size.toLocaleString()} ${selection.items.size === 1 ? "file" : "files"}` +
+                    (selection.folders.size > 0
+                      ? ` and ${selection.folders.size.toLocaleString()} ${selection.folders.size === 1 ? "folder" : "folders"}`
+                      : "") +
+                    " selected"}
+              </span>
+              <div className="flex gap-2">
+                {!selection.empty && <Button onClick={selection.clear}>Clear</Button>}
+                <Button variant="primary" icon="recover" disabled={selection.empty} onClick={() => setRecovering(true)}>
+                  Recover…
+                </Button>
+              </div>
+            </div>
+            {recovering && (
+              <RecoverDialog
+                scanId={scan.id}
+                selection={selection.parts}
+                sourceLabel={scan.source_label ?? scan.source_path}
+                onClose={() => setRecovering(false)}
+                onStarted={() => {
+                  selection.clear();
+                  onRecoveryStarted?.();
+                }}
+              />
+            )}
           </>
         )}
       </div>

@@ -3,10 +3,25 @@ import { api, errorMessage } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import { TONES, itemStatus } from "../lib/itemStatus";
 import type { FolderEntry, ItemView, ScanItemRow, ScanVolume, Scope } from "../lib/types";
+import type { Selection } from "../lib/selection";
 import { Button, ErrorBanner } from "./ui";
 import { Icon } from "./Icon";
 
 const PAGE = 200;
+
+function Check({ checked, disabled, label, onChange }: { checked: boolean; disabled?: boolean; label: string; onChange: () => void }) {
+  return (
+    <input
+      type="checkbox"
+      aria-label={label}
+      checked={checked}
+      disabled={disabled}
+      onClick={(e) => e.stopPropagation()}
+      onChange={onChange}
+      className="h-4 w-4 shrink-0 accent-[var(--k-accent)]"
+    />
+  );
+}
 
 export interface Location {
   scope: Scope;
@@ -107,6 +122,7 @@ function Listing({
   title,
   view,
   selected,
+  selection,
   onNavigate,
   onSelect,
 }: {
@@ -115,6 +131,7 @@ function Listing({
   title: string;
   view: ItemView;
   selected: ScanItemRow | null;
+  selection: Selection;
   onNavigate: (dir: string) => void;
   onSelect: (item: ScanItemRow | null) => void;
 }) {
@@ -187,6 +204,24 @@ function Listing({
           ↑
         </button>
         <Breadcrumb title={title} dir={location.dir} onNavigate={onNavigate} />
+        {rows > 0 && (
+          <label className="ml-auto flex shrink-0 items-center gap-2 text-[12px] text-muted">
+            <Check
+              label="Select everything in this folder"
+              checked={selection.isFolderSelected({ scope: location.scope, dir: location.dir, view })}
+              onChange={() =>
+                selection.toggleFolder({
+                  scope: location.scope,
+                  dir: location.dir,
+                  view,
+                  label: location.dir === "/" ? title : location.dir,
+                  files: total + folders.reduce((n, f) => n + f.files, 0),
+                })
+              }
+            />
+            All in folder
+          </label>
+        )}
       </div>
       {error && (
         <div className="p-3">
@@ -212,6 +247,17 @@ function Listing({
               cursor === i ? "bg-surface-2" : "hover:bg-surface-2/60"
             }`}
           >
+            <Check
+              label={`Select folder ${f.name}`}
+              checked={
+                selection.isFolderSelected({ scope: location.scope, dir: f.path, view }) ||
+                selection.isFolderSelected({ scope: location.scope, dir: location.dir, view })
+              }
+              disabled={selection.isFolderSelected({ scope: location.scope, dir: location.dir, view })}
+              onChange={() =>
+                selection.toggleFolder({ scope: location.scope, dir: f.path, view, label: f.path, files: f.files })
+              }
+            />
             <span aria-hidden className="text-accent">▸</span>
             <span className="min-w-0 flex-1 truncate font-medium">{f.name}</span>
             <span className="shrink-0 text-[12px] text-muted tabular-nums">
@@ -234,6 +280,7 @@ function Listing({
           const i = folders.length + j;
           const st = itemStatus(r);
           const isSel = selected?.id === r.id;
+          const covered = selection.isItemCovered(r, location.scope);
           return (
             <div
               key={r.id}
@@ -247,6 +294,12 @@ function Listing({
                 isSel ? "bg-accent-soft" : "hover:bg-surface-2/60"
               }`}
             >
+              <Check
+                label={`Select ${r.name}`}
+                checked={covered !== null}
+                disabled={covered === "folder"}
+                onChange={() => selection.toggleItem(r)}
+              />
               {/* Names wrap rather than truncate: carved names differ only at the end. */}
               <span className="min-w-0 flex-1 break-all" title={r.name}>
                 {r.name}
@@ -278,12 +331,14 @@ export function Explorer({
   view,
   carvedCount,
   selected,
+  selection,
   onSelect,
 }: {
   scanId: number;
   view: ItemView;
   carvedCount: number;
   selected: ScanItemRow | null;
+  selection: Selection;
   onSelect: (item: ScanItemRow | null) => void;
 }) {
   const [volumes, setVolumes] = useState<ScanVolume[]>([]);
@@ -350,6 +405,7 @@ export function Explorer({
           title={title}
           view={view}
           selected={selected}
+          selection={selection}
           onNavigate={(dir) => {
             setLocation({ ...location, dir });
             onSelect(null);
