@@ -52,7 +52,7 @@ export function RecoverDialog({
 
   const s = report?.summary;
   const c = report?.check ?? null;
-  const writable = s ? s.files - s.erased : 0;
+  const writable = s ? s.files - s.erased - s.overwritten : 0;
   const canStart =
     !checking && !active && destination !== null && c !== null && c.problems.length === 0 && (!c.same_disk || override) && writable > 0;
 
@@ -86,6 +86,13 @@ export function RecoverDialog({
             <p className="rounded-lg border border-line px-3 py-2 text-[12.5px] text-muted">
               {s.erased.toLocaleString()} selected {s.erased === 1 ? "file was" : "files were"} erased (data reads as
               zeros) and will be listed as not recovered rather than written.
+            </p>
+          )}
+          {s && s.overwritten > 0 && (
+            <p className="rounded-lg border border-line px-3 py-2 text-[12.5px] text-muted">
+              {s.overwritten.toLocaleString()} selected {s.overwritten === 1 ? "file has" : "files have"} been
+              completely overwritten by newer files. Nothing of {s.overwritten === 1 ? "it" : "them"} is left, so{" "}
+              {s.overwritten === 1 ? "it" : "they"} will be listed as not recovered rather than written as broken copies.
             </p>
           )}
 

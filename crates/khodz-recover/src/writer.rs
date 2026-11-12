@@ -24,8 +24,12 @@ pub struct RecoverItem {
     pub resident: Option<Vec<u8>>,
     /// The scan only partly knows where this file is (extent quality partial / carved partial).
     pub location_partial: bool,
-    /// The scan found the data erased (zeros); there is nothing to recover.
-    pub erased: bool,
+    /// Nothing of the file is left (erased to zeros, or entirely overwritten by other files):
+    /// it is reported as not recovered, with this reason, and nothing is written.
+    pub skip_reason: Option<String>,
+    /// The scan found the data damaged (part overwritten, or failing its format's checks): it
+    /// is written, but reported as incomplete with this reason.
+    pub damage: Option<String>,
     pub modified_ms: Option<i64>,
 }
 
@@ -228,7 +232,8 @@ pub fn recover<S: BlockSource + ?Sized>(
     on_item: &mut dyn FnMut(&ItemResult) -> Result<()>,
 ) -> Result<RecoverySummary> {
     let mut s = RecoverySummary { files_total: items.len() as u64, ..RecoverySummary::default() };
-    let bytes_total: u64 = items.iter().filter(|i| !i.erased).map(|i| i.size).fold(0, u64::saturating_add);
+    let bytes_total: u64 =
+        items.iter().filter(|i| i.skip_reason.is_none()).map(|i| i.size).fold(0, u64::saturating_add);
     let mut p = RecoveryProgress {
         files_done: 0,
         files_total: s.files_total,
@@ -292,8 +297,8 @@ fn recover_one<S: BlockSource + ?Sized>(
         outcome: Outcome::Failed,
         note: Some(note),
     };
-    if item.erased {
-        return Ok(fail("The data was erased (reads back as zeros); there is nothing to recover.".into()));
+    if let Some(reason) = &item.skip_reason {
+        return Ok(fail(reason.clone()));
     }
     let Some(name) = item.rel_path.file_name().map(|n| n.to_string_lossy().into_owned()) else {
         return Ok(fail("No file name".into()));
@@ -365,6 +370,9 @@ fn recover_one<S: BlockSource + ?Sized>(
                 khodz_core::ByteSize(item.size)
             ));
             outcome = Outcome::PartialSource;
+        } else if let Some(damage) = &item.damage {
+            notes.push(damage.clone());
+            outcome = Outcome::PartialSource;
         } else if item.location_partial {
             notes.push("Only part of this file's location was known; it may contain other data.".into());
             outcome = Outcome::PartialSource;
@@ -400,7 +408,8 @@ mod tests {
             extents,
             resident: None,
             location_partial: false,
-            erased: false,
+            skip_reason: None,
+            damage: None,
             modified_ms: Some(1_700_000_000_000),
         }
     }
@@ -489,20 +498,25 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let session = create_session_dir(tmp.path(), SystemTime::now()).unwrap();
         let mut erased = item(1, "V/gone.bin", vec![AbsExtent { offset: Some(0), len: 4096 }], 4096);
-        erased.erased = true;
+        erased.skip_reason = Some("Other files have been written over all of it.".into());
         let mut assumed = item(2, "V/assumed.jpg", vec![AbsExtent { offset: Some(0), len: 4096 }], 4096);
         assumed.location_partial = true;
         let short = item(3, "V/short.bin", vec![AbsExtent { offset: Some(0), len: 1000 }], 5000);
-        let (s, r) = run(&src, &[erased, assumed, short], &session);
+        let mut damaged = item(4, "V/clip.mov", vec![AbsExtent { offset: Some(0), len: 4096 }], 4096);
+        damaged.damage = Some("40% overwritten by other files".into());
+        let (s, r) = run(&src, &[erased, assumed, short, damaged], &session);
         assert_eq!(r[0].outcome, Outcome::Failed);
+        assert_eq!(r[0].note.as_deref(), Some("Other files have been written over all of it."));
         assert!(
             r[0].output.is_none() && !session.join("V/gone.bin").exists(),
-            "nothing written for erased data"
+            "nothing written for data that is gone"
         );
         assert_eq!(r[1].outcome, Outcome::PartialSource);
         assert_eq!((r[2].outcome, r[2].bytes_written), (Outcome::PartialSource, 1000));
         assert!(r[2].note.as_deref().unwrap().contains("Only 1000 B of 4.9 KiB"));
-        assert_eq!((s.verified, s.partial, s.failed), (0, 2, 1));
+        assert_eq!(r[3].outcome, Outcome::PartialSource, "known damage is never reported verified");
+        assert_eq!(r[3].note.as_deref(), Some("40% overwritten by other files"));
+        assert_eq!((s.verified, s.partial, s.failed), (0, 3, 1));
     }
 
     #[test]

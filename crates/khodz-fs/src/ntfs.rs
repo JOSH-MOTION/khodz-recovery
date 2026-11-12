@@ -453,6 +453,8 @@ impl<S: BlockSource> FileSystem for Ntfs<S> {
                 extents: node.extents.clone(),
                 resident: node.resident.clone(),
                 quality: node.quality,
+                overwritten: None,
+                alt_extents: None,
             })?;
         }
         Ok(stats)

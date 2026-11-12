@@ -32,7 +32,8 @@ fn to_recover(i: &ScanItem, id: i64, group: &str) -> RecoverItem {
         extents: i.extents.clone(),
         resident: i.resident.clone(),
         location_partial: i.quality == "partial",
-        erased: i.data_state == DataState::Erased,
+        skip_reason: (i.data_state == DataState::Erased).then(|| "erased".to_string()),
+        damage: None,
         modified_ms: i.modified_ms,
     }
 }

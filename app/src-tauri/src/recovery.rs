@@ -39,6 +39,8 @@ pub struct SelectionSummary {
     pub bytes: u64,
     /// Files whose data was erased; they will be reported as failed, not written.
     pub erased: u64,
+    /// Files entirely overwritten by other files; also reported as failed, not written.
+    pub overwritten: u64,
     /// Files that will be written but are known to be incomplete.
     pub partial: u64,
 }
@@ -91,17 +93,56 @@ fn resolve(
     Ok(out)
 }
 
+/// Why nothing of a file can be recovered, if so: erased to zeros, or every byte of it now
+/// belongs to other files (and no layout passed a content check).
+fn gone_reason(d: &ScanItemDetail) -> Option<String> {
+    if d.row.data_state == "erased" {
+        return Some("The data was erased (reads back as zeros); there is nothing to recover.".into());
+    }
+    if d.row.overwritten_pct == Some(100) && d.row.content_check.as_deref() != Some("verified") {
+        return Some(
+            "Other files have since been saved over all of this file's data; nothing of it is left to recover."
+                .into(),
+        );
+    }
+    None
+}
+
+/// What the scan already knows is wrong with a file that can still be written.
+fn known_damage(d: &ScanItemDetail) -> Option<String> {
+    if d.row.content_check.as_deref() == Some("verified") {
+        return None;
+    }
+    if d.row.content_check.as_deref() == Some("damaged") {
+        return Some(match &d.row.note {
+            Some(n) => format!("Damaged: {n}. It will probably not open, or only partly."),
+            None => {
+                "Its content failed its format's checks; it will probably not open, or only partly.".into()
+            }
+        });
+    }
+    match d.row.overwritten_pct {
+        Some(p) if p > 0 => {
+            Some(format!("About {p}% of it was overwritten by other files; it will be incomplete."))
+        }
+        _ => None,
+    }
+}
+
 fn summarize(items: &[ScanItemDetail]) -> SelectionSummary {
-    let erased = |d: &ScanItemDetail| d.row.data_state == "erased";
+    let gone = |d: &ScanItemDetail| gone_reason(d).is_some();
     SelectionSummary {
         files: items.len() as u64,
-        bytes: items.iter().filter(|d| !erased(d)).map(|d| d.row.size).fold(0, u64::saturating_add),
-        erased: items.iter().filter(|d| erased(d)).count() as u64,
+        bytes: items.iter().filter(|d| !gone(d)).map(|d| d.row.size).fold(0, u64::saturating_add),
+        erased: items.iter().filter(|d| d.row.data_state == "erased").count() as u64,
+        overwritten: items.iter().filter(|d| d.row.data_state != "erased" && gone(d)).count() as u64,
         partial: items
             .iter()
             .filter(|d| {
-                !erased(d)
-                    && (d.row.extent_quality == "partial" || d.row.carve_status.as_deref() == Some("partial"))
+                !gone(d)
+                    && (d.row.extent_quality == "partial"
+                        || d.row.carve_status.as_deref() == Some("partial")
+                        || known_damage(d).is_some())
             })
             .count() as u64,
     }
@@ -184,7 +225,8 @@ fn to_recover_item(d: &ScanItemDetail, groups: &HashMap<u64, String>) -> Recover
         resident: d.resident.clone(),
         location_partial: d.row.extent_quality == "partial"
             || d.row.carve_status.as_deref() == Some("partial"),
-        erased: d.row.data_state == "erased",
+        skip_reason: gone_reason(d),
+        damage: known_damage(d),
         modified_ms: d.row.modified_at,
     }
 }
@@ -528,6 +570,58 @@ mod tests {
         let check = check_destination(out.path(), SourceRef::Device(&format!(r"\\.\{disk}")), 1);
         assert!(check.same_disk && !check.ok(false));
         let _ = scan;
+    }
+
+    fn detail(
+        state: &str,
+        overwritten: Option<u8>,
+        check: Option<&str>,
+        note: Option<&str>,
+    ) -> ScanItemDetail {
+        ScanItemDetail {
+            scan_id: 1,
+            row: khodz_db::ScanItemRow {
+                id: 1,
+                path: "/v.mov".into(),
+                name: "v.mov".into(),
+                size: 1000,
+                is_dir: false,
+                is_deleted: true,
+                name_complete: true,
+                origin: "metadata".into(),
+                extent_quality: "contiguity_assumed".into(),
+                filesystem: Some("FAT32".into()),
+                file_type: Some("mov".into()),
+                modified_at: None,
+                data_state: state.into(),
+                carve_status: None,
+                note: note.map(Into::into),
+                overwritten_pct: overwritten,
+                content_check: check.map(Into::into),
+            },
+            volume_offset: 0,
+            extents: vec![(Some(0), 1000)],
+            resident: None,
+            created_at: None,
+        }
+    }
+
+    #[test]
+    fn overwritten_files_are_skipped_and_damaged_ones_flagged() {
+        let gone = detail("present", Some(100), Some("damaged"), None);
+        let erased = detail("erased", None, None, None);
+        let damaged =
+            detail("present", Some(25), Some("damaged"), Some("damage starts about 77% into the video"));
+        let partly = detail("present", Some(10), None, None);
+        let verified = detail("present", Some(100), Some("verified"), None);
+        assert!(gone_reason(&gone).unwrap().contains("saved over all"));
+        assert!(gone_reason(&erased).unwrap().contains("erased"));
+        assert_eq!(gone_reason(&damaged), None);
+        assert!(known_damage(&damaged).unwrap().contains("77%"));
+        assert!(known_damage(&partly).unwrap().contains("10%"));
+        assert_eq!((gone_reason(&verified), known_damage(&verified)), (None, None), "a verified layout wins");
+        let s = summarize(&[gone, erased, damaged, partly, verified]);
+        assert_eq!((s.files, s.erased, s.overwritten, s.partial, s.bytes), (5, 1, 1, 2, 3000));
     }
 
     #[test]

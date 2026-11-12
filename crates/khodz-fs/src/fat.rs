@@ -119,6 +119,14 @@ pub struct Fat<S> {
     info: FsInfo,
 }
 
+/// Where a file's data is believed to be, and how far that can be trusted.
+struct Layout {
+    extents: Vec<Extent>,
+    quality: ExtentQuality,
+    overwritten: Option<u64>,
+    alt: Option<Vec<Extent>>,
+}
+
 enum DirLoc {
     FixedRoot,
     Chain(u32),
@@ -248,38 +256,84 @@ impl<S: BlockSource> Fat<S> {
         }
     }
 
-    fn file_extents(&self, e: &RawEnt) -> Result<(Vec<Extent>, ExtentQuality)> {
+    fn file_extents(&self, e: &RawEnt, in_deleted_dir: bool) -> Result<Layout> {
         let size = u64::from(e.size);
+        let simple = |extents, quality| Layout { extents, quality, overwritten: None, alt: None };
         if size == 0 {
-            return Ok((Vec::new(), ExtentQuality::Exact));
+            return Ok(simple(Vec::new(), ExtentQuality::Exact));
         }
         if !self.g.valid_cluster(e.first_cluster) {
-            return Ok((Vec::new(), ExtentQuality::Partial));
+            return Ok(simple(Vec::new(), ExtentQuality::Partial));
         }
         let cs = self.g.cluster_size;
         let needed = size.div_ceil(cs);
-        if e.deleted {
-            // The chain was zeroed on delete: assume the file was stored contiguously.
-            let Some((start, unambiguous)) = self.resolve_deleted_start(e)? else {
-                return Ok((Vec::new(), ExtentQuality::Partial));
-            };
-            let last_ok = u64::from(start).saturating_add(needed) <= u64::from(self.g.cluster_count) + 2;
-            if !last_ok {
-                return Ok((Vec::new(), ExtentQuality::Partial));
+        if !e.deleted {
+            let (clusters, clean) = self.chain(e.first_cluster, needed.saturating_add(1))?;
+            let own_chain = clusters.len() as u64 == needed && clean;
+            // A live entry inside a deleted folder: its chain was usually freed with the folder
+            // (or reused by another file). Only a chain of exactly this file's length that ends
+            // cleanly is still its own; otherwise locate it like a deleted file.
+            if !in_deleted_dir || own_chain {
+                let complete = clusters.len() as u64 >= needed;
+                return Ok(simple(
+                    runs(
+                        &clusters[..clusters.len().min(usize::try_from(needed).unwrap_or(usize::MAX))],
+                        &self.g,
+                        size,
+                    ),
+                    if complete { ExtentQuality::Exact } else { ExtentQuality::Partial },
+                ));
             }
-            let q = match (unambiguous, needed) {
-                (false, _) => ExtentQuality::Partial,
-                (true, 1) => ExtentQuality::Exact,
-                (true, _) => ExtentQuality::ContiguityAssumed,
-            };
-            return Ok((vec![Extent { offset: Some(self.g.cluster_offset(start)), len: size }], q));
         }
-        let (clusters, _) = self.chain(e.first_cluster, needed)?;
-        let complete = clusters.len() as u64 >= needed;
-        Ok((
-            runs(&clusters, &self.g, size),
-            if complete { ExtentQuality::Exact } else { ExtentQuality::Partial },
-        ))
+        // The chain is gone: assume the file was stored contiguously from its first cluster.
+        // A live entry in a deleted folder still records its full first cluster.
+        let resolved = if e.deleted { self.resolve_deleted_start(e)? } else { Some((e.first_cluster, true)) };
+        let Some((start, unambiguous)) = resolved else {
+            return Ok(simple(Vec::new(), ExtentQuality::Partial));
+        };
+        let end = u64::from(start).saturating_add(needed);
+        if end > u64::from(self.g.cluster_count) + 2 {
+            return Ok(simple(Vec::new(), ExtentQuality::Partial));
+        }
+        let quality = match (unambiguous, needed) {
+            (false, _) => ExtentQuality::Partial,
+            (true, 1) => ExtentQuality::Exact,
+            (true, _) => ExtentQuality::ContiguityAssumed,
+        };
+        // Clusters in that range now allocated to other files are overwritten — unless this
+        // file was written around them (fragmented), so also build the layout that skips them.
+        let mut allocated = 0u64;
+        for c in u64::from(start)..end {
+            if self.fat_entry(u32::try_from(c).unwrap_or(0))? != 0 {
+                allocated = allocated.saturating_add(1);
+            }
+        }
+        let alt = if allocated > 0 { self.skip_allocated(start, needed, size)? } else { None };
+        Ok(Layout {
+            extents: vec![Extent { offset: Some(self.g.cluster_offset(start)), len: size }],
+            quality,
+            overwritten: Some(allocated.saturating_mul(cs).min(size)),
+            alt,
+        })
+    }
+
+    /// Free clusters from `start` onwards (skipping allocated ones) until `needed` are found.
+    fn skip_allocated(&self, start: u32, needed: u64, size: u64) -> Result<Option<Vec<Extent>>> {
+        let mut clusters: Vec<u32> = Vec::new();
+        let mut c = start;
+        while (clusters.len() as u64) < needed {
+            if !self.g.valid_cluster(c) {
+                return Ok(None);
+            }
+            if self.fat_entry(c)? == 0 {
+                clusters.push(c);
+            }
+            c = match c.checked_add(1) {
+                Some(n) => n,
+                None => return Ok(None),
+            };
+        }
+        Ok(Some(runs(&clusters, &self.g, size)))
     }
 
     /// A deleted directory's first cluster is trusted only if it still starts with "." and "..",
@@ -317,30 +371,42 @@ impl<S: BlockSource> Fat<S> {
             return Ok(None);
         }
         let needed = u64::from(raw.size).div_ceil(self.g.cluster_size).clamp(1, 4096);
-        let mut free = Vec::new();
+        // Score every candidate start: its first cluster must be free (it was freed with the
+        // file); prefer one whose data is not blank, then the fewest clusters other files now
+        // hold in the range. A fragmented file's true start can include such clusters, so
+        // "every cluster free" alone would pick an empty region elsewhere instead.
+        let mut scored: Vec<(u32, bool, u64)> = Vec::new();
+        let mut head = vec![0u8; 512];
         for &c in &candidates {
-            let mut all_free = true;
+            if self.fat_entry(c)? != 0 {
+                continue;
+            }
+            let mut allocated = 0u64;
+            let mut fits = true;
             for k in 0..needed {
                 let Some(cc) =
                     u32::try_from(u64::from(c).saturating_add(k)).ok().filter(|&x| self.g.valid_cluster(x))
                 else {
-                    all_free = false;
+                    fits = false;
                     break;
                 };
                 if self.fat_entry(cc)? != 0 {
-                    all_free = false;
-                    break;
+                    allocated = allocated.saturating_add(1);
                 }
             }
-            if all_free {
-                free.push(c);
+            if !fits {
+                continue;
             }
+            let n = self.src.read_exact_at(self.g.cluster_offset(c), &mut head)?;
+            let blank = head[..n].iter().all(|&b| b == 0);
+            scored.push((c, blank, allocated));
         }
-        Ok(match free.as_slice() {
-            [one] => Some((*one, true)),
-            [first, ..] => Some((*first, false)),
-            [] => None,
-        })
+        let best = scored.iter().min_by_key(|&&(_, blank, allocated)| (blank, allocated)).copied();
+        Ok(best.map(|(c, blank, allocated)| {
+            let rivals = scored.iter().filter(|&&(o, b, a)| o != c && b == blank && a == allocated).count();
+            // Unambiguous when the winner holds data and no other candidate scores as well.
+            (c, !blank && rivals == 0)
+        }))
     }
 }
 
@@ -532,8 +598,16 @@ impl<S: BlockSource> FileSystem for Fat<S> {
                         }
                     }
                 }
-                let (extents, quality) =
-                    if raw.is_dir { (Vec::new(), ExtentQuality::Exact) } else { self.file_extents(&raw)? };
+                let layout = if raw.is_dir {
+                    Layout {
+                        extents: Vec::new(),
+                        quality: ExtentQuality::Exact,
+                        overwritten: None,
+                        alt: None,
+                    }
+                } else {
+                    self.file_extents(&raw, deleted_ctx)?
+                };
                 stats.entries = stats.entries.saturating_add(1);
                 if deleted {
                     stats.deleted = stats.deleted.saturating_add(1);
@@ -549,9 +623,11 @@ impl<S: BlockSource> FileSystem for Fat<S> {
                     system: false,
                     created_ms: raw.created_ms,
                     modified_ms: raw.modified_ms,
-                    extents,
+                    extents: layout.extents,
                     resident: None,
-                    quality,
+                    quality: layout.quality,
+                    overwritten: layout.overwritten,
+                    alt_extents: layout.alt,
                 })?;
             }
         }

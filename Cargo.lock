@@ -1950,6 +1950,7 @@ dependencies = [
 name = "khodz-engine"
 version = "0.1.0"
 dependencies = [
+ "crc32fast",
  "khodz-carve",
  "khodz-core",
  "khodz-fs",

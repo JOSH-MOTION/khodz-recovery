@@ -100,6 +100,14 @@ fn to_row(i: ScanItem) -> NewScanItem {
         }),
         note: i.note,
         resident: i.resident,
+        overwritten_pct: i.overwritten_pct,
+        content_check: i.content_check.map(|c| {
+            match c {
+                khodz_engine::ContentCheck::Verified => "verified",
+                khodz_engine::ContentCheck::Damaged => "damaged",
+            }
+            .into()
+        }),
     }
 }
 

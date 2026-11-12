@@ -95,6 +95,67 @@ pub struct ScanItem {
     pub data_state: DataState,
     pub carve_status: Option<CarveStatus>,
     pub note: Option<String>,
+    /// Deleted files: share (0–100) of the assumed location that other files now occupy.
+    pub overwritten_pct: Option<u8>,
+    /// Deleted files of checkable formats: whether the data at that location is really the file.
+    pub content_check: Option<ContentCheck>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContentCheck {
+    /// The data passed the format's structural checks (for videos: frames checked against the
+    /// movie index).
+    Verified,
+    /// The data at the assumed location is not (all) this file.
+    Damaged,
+}
+
+/// Formats whose content can be checked structurally (see `khodz_carve::validate_at`).
+fn checkable(ext: &str) -> bool {
+    matches!(
+        ext,
+        "jpg"
+            | "jpeg"
+            | "png"
+            | "gif"
+            | "pdf"
+            | "zip"
+            | "docx"
+            | "xlsx"
+            | "pptx"
+            | "mp4"
+            | "mov"
+            | "m4v"
+            | "3gp"
+    )
+}
+
+/// Validate a file as recovery would assemble it. `Some((true, note))` = verified,
+/// `Some((false, note))` = the data is not this file, `None` = could not decide.
+fn check_content<S: BlockSource + ?Sized>(
+    src: &S,
+    extents: &[AbsExtent],
+    size: u64,
+    ext: &str,
+) -> Result<Option<(bool, String)>> {
+    let runs: Vec<(Option<u64>, u64)> = extents.iter().map(|e| (e.offset, e.len)).collect();
+    let view = khodz_io::ExtentSource::new(src, &runs, size);
+    let result = match khodz_carve::validate_at(&view, 0) {
+        Ok(r) => r,
+        Err(e @ (Error::DeviceLost(_) | Error::Cancelled)) => return Err(e),
+        Err(_) => return Ok(None),
+    };
+    Ok(match result {
+        Some(c) if c.status == CarveStatus::Complete => {
+            Some((true, c.note.unwrap_or_else(|| "content verified".into())))
+        }
+        Some(c) if c.status == CarveStatus::Partial => {
+            Some((false, c.note.unwrap_or_else(|| "content breaks part-way".into())))
+        }
+        Some(_) => None,
+        None => Some((false, format!("the data here does not start like a .{ext} file"))),
+    })
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -116,6 +177,10 @@ pub struct ScanSummary {
     pub items: u64,
     pub deleted: u64,
     pub erased: u64,
+    /// Deleted files whose whole location now belongs to other files.
+    pub overwritten: u64,
+    /// Deleted files whose content passed its format's checks.
+    pub verified: u64,
     pub carved: u64,
     pub carve: Option<CarveStats>,
 }
@@ -200,13 +265,28 @@ fn data_state<S: BlockSource + ?Sized>(src: &S, item: &ScanItem) -> Result<DataS
     Ok(if got > 0 && buf[..got].iter().all(|&b| b == 0) { DataState::Erased } else { DataState::Present })
 }
 
-fn metadata_item(e: Entry, vol_offset: u64, fs: FsKind) -> ScanItem {
-    let extents = e
-        .extents
+fn absolute(extents: &[khodz_fs::Extent], vol_offset: u64) -> Vec<AbsExtent> {
+    extents
         .iter()
         .map(|x| AbsExtent { offset: x.offset.map(|o| o.saturating_add(vol_offset)), len: x.len })
-        .collect();
+        .collect()
+}
+
+fn percent(part: u64, whole: u64) -> u8 {
+    if whole == 0 {
+        return 0;
+    }
+    // Round up: any overwritten byte must show as at least 1%.
+    let p = u128::from(part).saturating_mul(100).div_ceil(u128::from(whole));
+    u8::try_from(p.min(100)).unwrap_or(100)
+}
+
+fn metadata_item(e: Entry, vol_offset: u64, fs: FsKind) -> ScanItem {
+    let extents = absolute(&e.extents, vol_offset);
+    let overwritten_pct = e.overwritten.map(|o| percent(o, e.size));
     ScanItem {
+        overwritten_pct,
+        content_check: None,
         origin: Origin::Metadata,
         file_type: if e.is_dir { None } else { extension(&e.name) },
         path: e.path,
@@ -227,6 +307,49 @@ fn metadata_item(e: Entry, vol_offset: u64, fs: FsKind) -> ScanItem {
         carve_status: None,
         note: None,
     }
+}
+
+/// Check a deleted file's content where the filesystem metadata says it is. If that fails and
+/// the file could instead have been written around other files (fragmented), check that
+/// layout too and keep whichever is really the file.
+fn verify_deleted<S: BlockSource + ?Sized>(
+    src: &S,
+    item: &mut ScanItem,
+    alt: Option<Vec<AbsExtent>>,
+) -> Result<()> {
+    let ext = item.file_type.clone().unwrap_or_default();
+    if !checkable(&ext) {
+        if item.overwritten_pct == Some(100) {
+            item.note = Some("overwritten: other files now occupy all of its space".into());
+        }
+        return Ok(());
+    }
+    let primary = check_content(src, &item.extents, item.size, &ext)?;
+    if let Some((true, note)) = primary {
+        item.content_check = Some(ContentCheck::Verified);
+        item.note = Some(note);
+        return Ok(());
+    }
+    if let Some(alt) = alt.filter(|a| !a.is_empty()) {
+        if let Some((true, note)) = check_content(src, &alt, item.size, &ext)? {
+            item.extents = alt;
+            item.overwritten_pct = Some(0);
+            item.quality = "contiguity_assumed";
+            item.content_check = Some(ContentCheck::Verified);
+            item.note = Some(format!("rebuilt around other files (it was fragmented); {note}"));
+            return Ok(());
+        }
+    }
+    if let Some((false, note)) = primary {
+        item.content_check = Some(ContentCheck::Damaged);
+        item.note = Some(match item.overwritten_pct {
+            Some(p) if p > 0 => format!("{p}% overwritten by other files; {note}"),
+            _ => note,
+        });
+    } else if item.overwritten_pct == Some(100) {
+        item.note = Some("overwritten: other files now occupy all of its space".into());
+    }
+    Ok(())
 }
 
 /// Run a scan of the volumes in the partition table (or the whole source when there is none).
@@ -309,11 +432,20 @@ pub fn scan_volumes<S: BlockSource + ?Sized>(
                     vs.label = fs.info().label.clone().or(vs.label);
                     let kind = info.kind;
                     let walked = fs.walk(cancel, &mut |entry| {
+                        let alt = entry.alt_extents.as_deref().map(|a| absolute(a, vol_offset));
                         let mut item = metadata_item(entry, vol_offset, kind);
                         item.data_state = data_state(src, &item)?;
                         if item.data_state == DataState::Erased {
                             item.note = Some("data erased (zeros), likely TRIM".into());
                             summary.erased = summary.erased.saturating_add(1);
+                        } else if item.deleted && !item.is_dir && !item.extents.is_empty() {
+                            verify_deleted(src, &mut item, alt)?;
+                            if item.content_check == Some(ContentCheck::Verified) {
+                                summary.verified = summary.verified.saturating_add(1);
+                            }
+                        }
+                        if item.overwritten_pct == Some(100) {
+                            summary.overwritten = summary.overwritten.saturating_add(1);
                         }
                         if let Some(first) = item.extents.first().and_then(|e| e.offset) {
                             known.insert(first);
@@ -397,6 +529,8 @@ pub fn scan_volumes<S: BlockSource + ?Sized>(
                     data_state: DataState::Present,
                     carve_status: Some(c.status),
                     note: c.note,
+                    overwritten_pct: None,
+                    content_check: None,
                 })
             },
         )?;

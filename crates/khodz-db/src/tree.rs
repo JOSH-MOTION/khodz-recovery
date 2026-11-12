@@ -289,6 +289,8 @@ mod tests {
             carve_status: (origin == "carved").then(|| "complete".into()),
             note: None,
             resident: None,
+            overwritten_pct: None,
+            content_check: None,
         }
     }
 

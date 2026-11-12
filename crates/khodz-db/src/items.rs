@@ -33,6 +33,10 @@ pub struct NewScanItem {
     pub carve_status: Option<String>,
     pub note: Option<String>,
     pub resident: Option<Vec<u8>>,
+    /// Deleted files: share (0-100) of their assumed location other files now occupy.
+    pub overwritten_pct: Option<u8>,
+    /// Deleted files of checkable formats: `verified` or `damaged`.
+    pub content_check: Option<String>,
 }
 
 /// Listing row (no extents / resident data: fetch [`ScanItemDetail`] for those).
@@ -53,6 +57,8 @@ pub struct ScanItemRow {
     pub data_state: String,
     pub carve_status: Option<String>,
     pub note: Option<String>,
+    pub overwritten_pct: Option<u8>,
+    pub content_check: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -121,7 +127,10 @@ fn to_i64(v: u64) -> i64 {
 }
 
 const ROW_COLUMNS: &str = "id, path, name, size, is_dir, is_deleted, name_complete, origin, extent_quality,
-     filesystem, file_type, modified_at, data_state, carve_status, note";
+     filesystem, file_type, modified_at, data_state, carve_status, note, overwritten_pct, content_check";
+
+/// Number of columns in [`ROW_COLUMNS`]; queries that select more read them after these.
+const ROW_COLUMN_COUNT: usize = 17;
 
 fn row(r: &Row<'_>) -> rusqlite::Result<ScanItemRow> {
     Ok(ScanItemRow {
@@ -140,6 +149,8 @@ fn row(r: &Row<'_>) -> rusqlite::Result<ScanItemRow> {
         data_state: r.get(12)?,
         carve_status: r.get(13)?,
         note: r.get(14)?,
+        overwritten_pct: r.get(15)?,
+        content_check: r.get(16)?,
     })
 }
 
@@ -182,8 +193,9 @@ impl Database {
             let mut stmt = tx.prepare_cached(
                 "INSERT INTO scan_items (scan_id, name, path, size, is_dir, is_deleted, origin, extent_quality,
                     filesystem, file_type, created_at, modified_at, extents, volume_offset, name_complete,
-                    is_system, data_state, carve_status, note, resident)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+                    is_system, data_state, carve_status, note, resident, overwritten_pct, content_check)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
+                         ?21, ?22)",
             )?;
             for it in items {
                 stmt.execute(params![
@@ -207,6 +219,8 @@ impl Database {
                     it.carve_status,
                     it.note,
                     it.resident,
+                    it.overwritten_pct,
+                    it.content_check,
                 ])?;
             }
         }
@@ -275,13 +289,19 @@ impl Database {
                 &format!("SELECT {ROW_COLUMNS}, volume_offset, extents, resident, created_at, scan_id FROM scan_items WHERE id = ?1"),
                 [id],
                 |r| {
+                    // Detail columns follow the row columns.
+                    let n = ROW_COLUMN_COUNT;
                     Ok(ScanItemDetail {
-                        scan_id: r.get(19)?,
+                        scan_id: r.get(n + 4)?,
                         row: row(r)?,
-                        volume_offset: r.get::<_, i64>(15)?.max(0) as u64,
-                        extents: r.get::<_, Option<Vec<u8>>>(16)?.as_deref().map(decode_extents).unwrap_or_default(),
-                        resident: r.get(17)?,
-                        created_at: r.get(18)?,
+                        volume_offset: r.get::<_, i64>(n)?.max(0) as u64,
+                        extents: r
+                            .get::<_, Option<Vec<u8>>>(n + 1)?
+                            .as_deref()
+                            .map(decode_extents)
+                            .unwrap_or_default(),
+                        resident: r.get(n + 2)?,
+                        created_at: r.get(n + 3)?,
                     })
                 },
             )
@@ -316,6 +336,8 @@ mod tests {
             carve_status: (origin == "carved").then(|| "complete".into()),
             note: None,
             resident: None,
+            overwritten_pct: deleted.then_some(25),
+            content_check: deleted.then(|| "damaged".into()),
         }
     }
 
@@ -375,6 +397,25 @@ mod tests {
         let d = db.get_scan_item(all[1].id).unwrap();
         assert_eq!(d.extents, vec![(Some(4096), 50), (None, 50)], "extents round-trip incl. sparse");
         assert_eq!(d.volume_offset, 1_048_576);
+        let del = db.list_scan_items(id, &deleted, Page::default()).unwrap();
+        assert_eq!((del[0].overwritten_pct, del[0].content_check.as_deref()), (Some(25), Some("damaged")));
+        assert_eq!((all[2].overwritten_pct, all[2].content_check.as_deref()), (None, None));
+    }
+
+    #[test]
+    fn row_column_count_matches_the_column_list() {
+        assert_eq!(ROW_COLUMNS.split(',').count(), ROW_COLUMN_COUNT);
+    }
+
+    #[test]
+    fn overwritten_and_content_check_values_are_constrained() {
+        let (mut db, id) = db_with_scan();
+        let mut over = item("/o", true, "metadata");
+        over.overwritten_pct = Some(101);
+        assert!(db.insert_scan_items(id, &[over]).is_err(), "percentage above 100 rejected");
+        let mut check = item("/c", true, "metadata");
+        check.content_check = Some("playable?".into());
+        assert!(db.insert_scan_items(id, &[check]).is_err(), "unknown check value rejected");
     }
 
     #[test]

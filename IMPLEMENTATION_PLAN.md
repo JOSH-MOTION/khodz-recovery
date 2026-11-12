@@ -37,6 +37,25 @@ Vite 8.3, Tailwind 4.3, TypeScript 7.0, Vitest 5.1.
 
 Each stage: implement → run tests → fix → update docs → only then continue.
 
+## After Stage 9 — recovery quality from real-world use (2026-11-12)
+
+Triggered by a user report: recovered videos from a camera pen drive did not play. Diagnosis
+on the real drive showed most were genuinely overwritten (but offered as recoverable), and a
+macOS-deleted folder's videos were not located at all. Delivered:
+
+- `khodz-fs` FAT: deleted-folder files located from their first cluster; overwritten share
+  measured; alternative layout around other files' clusters; better high-word resolution.
+- `khodz-carve::media`: MP4/MOV verification against the movie index (H.264/H.265 frames).
+  Carved MP4/MOV can now be **Complete** or **Partial** instead of always "Unverified".
+- `khodz-io::ExtentSource`: a file as recovery would assemble it, for validators.
+- `khodz-engine`: content check of deleted files of checkable formats, choosing the layout
+  that is really the file; scan summary counts overwritten / verified.
+- `khodz-db` v5: `overwritten_pct`, `content_check`.
+- Recovery: fully overwritten files are not written (reason given); known damage is reported
+  as incomplete with where it starts. UI labels: verified / damaged / N% overwritten /
+  overwritten.
+- Tools: `khodz-engine/examples/diagnose.rs`, `khodz-recover/examples/recover_lab.rs`.
+
 ## Stage 9 — delivered on Windows; CI pending a GitHub remote
 
 - Bundling (`tauri.conf.json`): Windows MSI (per-machine, WiX) and NSIS setup.exe (per-user,

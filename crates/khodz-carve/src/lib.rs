@@ -17,6 +17,7 @@
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
 
 mod formats;
+pub mod media;
 mod stream;
 
 use serde::Serialize;

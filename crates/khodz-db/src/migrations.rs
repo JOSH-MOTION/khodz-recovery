@@ -112,6 +112,14 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE recoveries ADD COLUMN same_disk_override INTEGER NOT NULL DEFAULT 0;
     CREATE INDEX idx_recovery_items ON recovery_items(recovery_id);
     "#,
+    // v5 — what is really left of a deleted file: how much of its assumed location other files
+    // now occupy, and whether its content was checked against its format.
+    r#"
+    ALTER TABLE scan_items ADD COLUMN overwritten_pct INTEGER
+        CHECK (overwritten_pct IS NULL OR overwritten_pct BETWEEN 0 AND 100);
+    ALTER TABLE scan_items ADD COLUMN content_check TEXT
+        CHECK (content_check IS NULL OR content_check IN ('verified','damaged'));
+    "#,
 ];
 
 pub const LATEST: u32 = MIGRATIONS.len() as u32;

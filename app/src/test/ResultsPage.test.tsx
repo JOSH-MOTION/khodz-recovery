@@ -56,6 +56,8 @@ function row(over: Partial<ScanItemRow>): ScanItemRow {
     data_state: "present",
     carve_status: null,
     note: null,
+    overwritten_pct: null,
+    content_check: null,
     ...over,
   };
 }
@@ -125,6 +127,23 @@ describe("itemStatus", () => {
     expect(itemStatus(row({ origin: "carved", carve_status: "partial" }))).toMatchObject({ text: "Partial", tone: "warn" });
     expect(itemStatus(row({ origin: "carved", carve_status: "unverified" })).text).toBe("Unverified");
     expect(itemStatus(row({ is_deleted: true, extent_quality: "partial" })).text).toBe("Deleted · partial");
+  });
+
+  it("says what is really left of a deleted file", () => {
+    const del = (over: Partial<ScanItemRow>) => itemStatus(row({ is_deleted: true, ...over }));
+    expect(del({ content_check: "verified", note: "video data verified (25 frames checked across the file)" })).toMatchObject({
+      text: "Deleted · verified",
+      tone: "ok",
+      hint: "video data verified (25 frames checked across the file)",
+    });
+    expect(del({ overwritten_pct: 100, content_check: "damaged" })).toMatchObject({ text: "Deleted · overwritten", tone: "danger" });
+    expect(del({ content_check: "damaged", note: "damage starts about 77% into the video" })).toMatchObject({
+      text: "Deleted · damaged",
+      hint: "damage starts about 77% into the video",
+    });
+    expect(del({ overwritten_pct: 25 }).text).toBe("Deleted · 25% overwritten");
+    // A layout that passed its content check wins over an overwrite estimate.
+    expect(del({ overwritten_pct: 100, content_check: "verified" }).text).toBe("Deleted · verified");
   });
 });
 

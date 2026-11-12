@@ -53,6 +53,29 @@ length that validated; they are never reported Complete (regression-tested). Kno
 JPEG whose gap is filled with another JPEG's image data is not detectable without decoding.
 Not carved yet: MP3, OLE (.doc/.xls/.ppt), SQLite, camera RAW, HEIF sequences, archives other than ZIP.
 
+## What is really left of a deleted file (FAT32 / FAT16 / FAT12)
+
+Found on a real 30 GB camera pen drive (FAT32, used on macOS and Windows) and fixed:
+
+| Situation | Handling |
+|---|---|
+| File inside a deleted folder whose own entry still looks live (macOS deletes folders this way) and whose cluster chain was freed or reused | Located from its recorded first cluster like any deleted file. Previously only one cluster was found and the file was "partial". On the pen drive this alone brought back 11 videos byte-for-byte |
+| Deleted file whose clusters are now allocated to other files | The share is measured and shown ("overwritten", "25% overwritten"). Fully overwritten files are never written out as broken copies: they are reported as not recoverable |
+| Deleted file that was written *around* another file (fragmented) | An alternative layout that skips the clusters other files hold is tried, and kept only if its content passes the format check |
+| Windows cleared the high 16 bits of the start cluster | Candidates are scored: first cluster free, data not blank, fewest clusters held by other files. Previously "all clusters free" alone could pick an empty region elsewhere and report the file as erased |
+
+**Content checks.** Deleted JPEG, PNG, GIF, PDF, ZIP/DOCX/XLSX/PPTX and MP4/MOV/M4V/3GP files
+are validated at their assumed location before they are offered. Videos are checked frame by
+frame against their movie index (H.264/H.265 samples parsed as NAL units). Results:
+**verified**, or **damaged** with where the damage starts ("damage starts about 77% into the
+video" — the player will typically play up to there). On the pen drive the predicted damage
+points (4%, 77%, 88%) matched the real ones (3.7%, 73.7%, 88.4%).
+
+Limits: damage caused by files that were themselves deleted later is only detected for
+checkable formats (no record says who overwrote whom). Formats without a check (MKV, CR3 and
+other camera RAW, audio) are labelled from overwrite information only. Videos with codecs
+other than H.264/H.265 are "not verifiable".
+
 ## Partition analysis (Stage 8)
 
 | Situation | Handling | Verified on |

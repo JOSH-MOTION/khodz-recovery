@@ -120,6 +120,13 @@ pub struct Entry {
     /// Small NTFS files live inside the MFT record itself.
     pub resident: Option<Vec<u8>>,
     pub quality: ExtentQuality,
+    /// Deleted files only: bytes of `extents` that are now allocated to other files, i.e.
+    /// overwritten if the assumed layout is right. `None` when not assessed.
+    pub overwritten: Option<u64>,
+    /// Deleted files only: an alternative layout that skips the clusters other files now use,
+    /// in case the file was written *around* them (fragmented) rather than overwritten by them.
+    /// Content checks decide which layout is real.
+    pub alt_extents: Option<Vec<Extent>>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]

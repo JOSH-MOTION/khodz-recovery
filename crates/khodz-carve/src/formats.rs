@@ -731,9 +731,33 @@ fn mp4<S: BlockSource + ?Sized>(src: &S, at: u64) -> Result<Option<Carved>> {
     } else {
         seen.contains(b"moov") && (seen.contains(b"mdat") || seen.contains(b"moof"))
     };
-    // The box chain is consistent, but the media payload (mdat) is opaque: a fragment gap
-    // inside it cannot be detected, so this is never reported as Complete.
-    Ok(if complete {
+    // The box chain is consistent; whether the media data is really there is decided by
+    // reading the movie index and checking video samples against it.
+    Ok(if complete && kind != FileKind::Heic {
+        match crate::media::verify_isobmff(src, at, end)? {
+            crate::media::MediaVerdict::Verified { samples_checked } => carved(
+                at,
+                end,
+                kind,
+                CarveStatus::Complete,
+                Some(&format!("video data verified ({samples_checked} frames checked across the file)")),
+            ),
+            crate::media::MediaVerdict::Damaged { from, reason, .. } => carved(
+                at,
+                end,
+                kind,
+                CarveStatus::Partial,
+                Some(&format!("{reason}; damage starts about {:.0}% into the video", from * 100.0)),
+            ),
+            crate::media::MediaVerdict::Unknown(why) => carved(
+                at,
+                end,
+                kind,
+                CarveStatus::Unverified,
+                Some(&format!("container structure valid; media not verifiable ({why})")),
+            ),
+        }
+    } else if complete {
         carved(
             at,
             end,

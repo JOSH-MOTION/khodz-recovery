@@ -341,6 +341,8 @@ impl<S: BlockSource> FileSystem for ExFat<S> {
                     extents,
                     resident: None,
                     quality,
+                    overwritten: None,
+                    alt_extents: None,
                 })?;
             }
         }

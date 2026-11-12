@@ -283,6 +283,10 @@ export interface ScanItemRow {
   data_state: "present" | "erased" | "unknown";
   carve_status: "complete" | "unverified" | "partial" | null;
   note: string | null;
+  /** Deleted files: share (0-100) of their location other files now occupy. */
+  overwritten_pct: number | null;
+  /** Deleted files of checkable formats: whether the data there really is the file. */
+  content_check: "verified" | "damaged" | null;
 }
 
 export interface ItemPage {
@@ -342,6 +346,7 @@ export interface SelectionSummary {
   files: number;
   bytes: number;
   erased: number;
+  overwritten: number;
   partial: number;
 }
 

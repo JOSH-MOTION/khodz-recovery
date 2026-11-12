@@ -1,5 +1,25 @@
 # Khodz Recovery — Testing Strategy
 
+## Recovery quality on a real pen drive (2026-11-12)
+
+A user's recovered videos would not play. Investigated on the actual drive (SanDisk 3.2Gen1,
+30.7 GB FAT32, 92% full, read-only, elevated diagnostic `crates/khodz-engine/examples/diagnose.rs`):
+
+| Finding | Before | After |
+|---|---|---|
+| Deleted videos whose location is entirely taken by newer camera photos | offered as recoverable; "recovered" copies held other files' bytes | 444 deleted files reported **overwritten**, not written |
+| `josh boutique` folder deleted by macOS (entries still live, chains freed) | 26 videos "partial", 1 cluster located | located; **11 verified**, and all 11 recovered copies are **byte-identical** to the intact copies elsewhere on the drive |
+| Partly overwritten videos | "Deleted" | "damaged — starts about 77% / 88% / 4% in"; real first differences at 73.7% / 88.4% / 3.7% |
+
+| Suite | Result |
+|---|---|
+| `cargo test -p khodz-carve` (adds MP4/MOV deep check: intact movie verified; overwritten middle found and located at ~50%; zeroed media; missing/truncated index; hostile tables) | 5 unit + 8 + 1 passed |
+| `cargo test -p khodz-engine --test deleted_files -- --ignored` (Windows-built FAT32 volume: folder deleted macOS-style → files intact byte for byte; clusters reused → 100% overwritten; PNG written around a foreign cluster → rebuilt and verified byte for byte) | 3 passed |
+| `cargo test -p khodz-db` (adds schema v5 columns, constraints, column-count guard) | 30 passed |
+| `cargo test -p khodz-recover` (skip reasons and known damage) · `cargo test -p khodz-recovery` (overwritten skipped, damaged flagged, verified layout wins) | 14 · 23 passed |
+| `npm test` (labels: verified / damaged / N% overwritten / overwritten; Recover dialog counts overwritten files) | 66 passed |
+| Workspace total, Windows + both macOS clippy targets, Rust 1.85 check | 184 passed · clean · builds |
+
 ## Continuous integration (Stage 9)
 
 `.github/workflows/ci.yml` runs on every push to `main`, every pull request, and before every

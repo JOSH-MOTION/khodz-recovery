@@ -75,6 +75,8 @@ function row(over: Partial<ScanItemRow>): ScanItemRow {
     data_state: "present",
     carve_status: null,
     note: null,
+    overwritten_pct: null,
+    content_check: null,
     ...over,
   };
 }
@@ -100,7 +102,7 @@ const okCheck = {
 };
 
 function report_(files: number, check: DestinationReport["check"]): DestinationReport {
-  return { summary: { files, bytes: 2079, erased: 0, partial: 0 }, check };
+  return { summary: { files, bytes: 2079, erased: 0, overwritten: 0, partial: 0 }, check };
 }
 
 const done: Recovery = {
@@ -262,11 +264,13 @@ describe("Recover dialog", () => {
   });
 
   it("explains erased files will not be written", async () => {
-    vi.mocked(api.checkRecovery).mockResolvedValue({ summary: { files: 3, bytes: 2079, erased: 1, partial: 0 }, check: null });
+    vi.mocked(api.checkRecovery).mockResolvedValue({ summary: { files: 4, bytes: 2079, erased: 1, overwritten: 1, partial: 0 }, check: null });
     const user = userEvent.setup();
     renderResults();
     const dlg = await openDialog(user);
     expect(await within(dlg).findByText(/1 selected file was erased/)).toBeInTheDocument();
+    expect(within(dlg).getByText(/1 selected file has been completely overwritten by newer files/)).toBeInTheDocument();
+    // 4 selected − 1 erased − 1 overwritten: only 2 are actually written.
     expect(within(dlg).getByRole("button", { name: "Recover 2 files" })).toBeDisabled();
   });
 });
