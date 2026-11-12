@@ -17,7 +17,7 @@ members = [
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-repository = "https://github.com/khodz/khodz-recovery"
+repository = "https://github.com/JOSH-MOTION/khodz-recovery"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

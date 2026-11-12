@@ -32,7 +32,7 @@
     "category": "Utility",
     "publisher": "Khodz Recovery contributors",
     "copyright": "© 2026 Khodz Recovery contributors",
-    "homepage": "https://github.com/khodz/khodz-recovery",
+    "homepage": "https://github.com/JOSH-MOTION/khodz-recovery",
     "shortDescription": "Open-source data recovery",
     "longDescription": "Recover deleted and lost files from drives and disk images. Sources are only ever read; recovered files are verified with SHA-256 after writing.",
     "windows": {
