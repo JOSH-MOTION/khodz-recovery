@@ -6,6 +6,7 @@ import { Button, Card, EmptyState, ErrorBanner, PageHeader } from "../components
 import { Icon } from "../components/Icon";
 import { VolumeLayout } from "../components/VolumeLayout";
 import { ScanDialog } from "../components/ScanDialog";
+import { PartitionCheck } from "../components/PartitionCheck";
 
 type Analysis = { status: "loading" } | { status: "ready"; data: ImageAnalysis } | { status: "error"; message: string };
 
@@ -150,6 +151,11 @@ function ImageCard({
         {analysis.status === "loading" && <p className="text-[12.5px] text-muted">Reading partition table…</p>}
         {analysis.status === "error" && <ErrorBanner message={analysis.message} />}
         {analysis.status === "ready" && <VolumeLayout analysis={analysis.data} diskSize={image.size_bytes} />}
+      </div>
+
+      <div className="border-b border-line p-5">
+        <h3 className="mb-3 text-[13.5px] font-semibold">Partition check</h3>
+        <PartitionCheck source={{ kind: "image", path: image.path }} label={image.file_name} />
       </div>
 
       <div className="p-5">

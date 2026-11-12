@@ -21,7 +21,7 @@ Engineering priority: **data safety → recovery correctness → reliability →
 │ khodz-engine   — job orchestration, cancellation, progress   │
 │   ├─ khodz-device   device/volume discovery  (win/ & macos/) │
 │   ├─ khodz-io       read-only block sources, images, cache   │
-│   ├─ khodz-part     MBR/GPT parsing, lost-partition search   │
+│   ├─ khodz-part     MBR/GPT parsing and consistency checks   │
 │   ├─ khodz-fs       ntfs/ fat/ exfat/ hfsplus/ apfs/          │
 │   ├─ khodz-carve    signature carving + structural validation│
 │   ├─ khodz-recover  destination checks, writing, hashing     │
@@ -40,12 +40,12 @@ engine is usable from a CLI (`khodz-cli`, used heavily by tests) without Tauri.
 | `khodz-core` | `Offset`, `ByteLen`, `SectorSize`, `Error`, `CancelToken`, `Progress` | No I/O. |
 | `khodz-io` *(implemented)* | `trait BlockSource { fn read_at(&self, off, buf) -> Result<usize>; fn len(); fn sector_size(); }` Implementations: `ImageFile` (raw/dd/img), `WinPhysicalDrive`, `MacRawDisk`, `SliceSource` (partition window), `CachedSource` (bounded LRU of aligned chunks). | **There is no write method anywhere in this crate.** Handles are opened read-only at the OS level. Reads are sector-aligned and chunked (default 1 MiB, max cache 64 MiB). |
 | `khodz-device` *(implemented)* | Enumerate physical disks and volumes, model/serial/size/bus/removable, volume→disk mapping. | Windows: probe `\\.\PhysicalDriveN` + `FindFirstVolumeW`, zero-access handles, `IOCTL_STORAGE_QUERY_PROPERTY`, `IOCTL_DISK_GET_DRIVE_GEOMETRY_EX`, `IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS`. macOS: `diskutil -plist` (chosen over DiskArbitration/IOKit: no `unsafe`, APFS mapping built in). Separate modules; IOCTL and plist parsers are pure and tested on every OS. |
-| `khodz-part` *(implemented)* | MBR, EBR chains, GPT (header CRC + backup), lost-partition scan by boot-sector/superblock signatures. | Never trusts a table blindly; reports conflicts. |
+| `khodz-part` *(implemented)* | MBR, EBR chains, GPT (header + entry CRCs, backup fallback, primary/backup comparison). | Never trusts a table blindly; reports conflicts. |
 | `khodz-fs` *(FAT/exFAT/NTFS implemented; HFS+/APFS detect-only)* | One module per family. Each exposes `probe()`, `open()`, `walk()` (live + deleted entries), `extents(file)`. | Every recovered entry carries a **confidence** and an **extent source** (metadata-exact / metadata-assumed-contiguous / carved). |
 | `khodz-carve` *(implemented)* | Header/footer signatures + per-format validators (JPEG markers, PNG CRC chunks, ZIP central directory, PDF xref/EOF, MP4 box tree, …). | A carved file is "complete" only if its validator passes end-to-end; otherwise "partial" or rejected. |
 | `khodz-recover` | Destination validation (exists, writable, space, physical-disk mapping per OS), name sanitising, streaming copy with SHA-256, fsync + re-read verification, per-file outcomes. The app layer writes `khodz-manifest.json` and the history. | Refuses destinations on the source physical disk unless an explicit override is set and logged. Never overwrites existing files (unique-name policy). Implemented (Stage 7). |
 | `khodz-db` | Schema migrations, scans, found items (paged), recoveries, settings. | Item tables are paged; the UI never loads a full result set. |
-| `khodz-engine` *(scanning implemented)* | Job runner (worker threads), cancellation, device-disconnect handling, progress events at ≤10 Hz. | A job ends in exactly one terminal state: completed / cancelled / failed(reason) / device_lost. |
+| `khodz-engine` *(implemented)* | Scan orchestration (quick/deep, table volumes or an explicit volume list), cancellation, device-disconnect handling, progress. `partitions`: layout checks against disk contents, backup-boot fallback, lost-partition search (uses `khodz-fs::probe` boot-record validation and `khodz-io::PatchedSource` for in-memory boot substitution). | A job ends in exactly one terminal state: completed / cancelled / failed(reason) / device_lost. |
 
 ## 3. Data flow: scan
 

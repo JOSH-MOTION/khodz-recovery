@@ -3,14 +3,16 @@
 Open-source data recovery for Windows and macOS. Rust engine, Tauri 2 desktop shell, React +
 TypeScript + Tailwind UI, SQLite for scan and recovery history.
 
-> **Status: early development (Stage 7 of 9).** Quick and deep scans run from the app on disk
+> **Status: early development (Stage 8 of 9).** Quick and deep scans run from the app on disk
 > images and — when run as Administrator — live drives; results can be browsed by volume and
 > folder and previewed (image, text, hex) with an honest status per file. Selected files and
 > folders can be recovered to another disk; every file is re-read after writing and checked
-> against its SHA-256, and a manifest is written. Verified on Windows; macOS is untested on
-> real hardware and HFS+/APFS are detection-only. Lost-partition analysis and installers are
-> still to come — see [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Not yet recommended for
-> data you cannot afford to lose; work from a disk image where possible.
+> against its SHA-256, and a manifest is written. Partition tables are checked against the
+> disk, and erased or deleted partitions can be found (including through backup boot sectors)
+> and scanned. Verified on Windows; macOS is untested on real hardware and HFS+/APFS are
+> detection-only. Installers are still to come — see
+> [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Not yet recommended for data you cannot
+> afford to lose; work from a disk image where possible.
 
 ## Safety first
 

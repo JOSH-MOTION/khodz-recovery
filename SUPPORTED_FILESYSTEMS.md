@@ -53,6 +53,22 @@ length that validated; they are never reported Complete (regression-tested). Kno
 JPEG whose gap is filled with another JPEG's image data is not detectable without decoding.
 Not carved yet: MP3, OLE (.doc/.xls/.ppt), SQLite, camera RAW, HEIF sequences, archives other than ZIP.
 
+## Partition analysis (Stage 8)
+
+| Situation | Handling | Verified on |
+|---|---|---|
+| Partition table erased (MBR sector or whole GPT zeroed, e.g. `diskpart clean`) | Search finds FAT12/16/32, exFAT and NTFS volumes by their boot sector **and** the structure it points to (FAT media bytes, exFAT FAT entry 0, NTFS `FILE` record at the MFT or its mirror); found volumes can be scanned | Windows-built MBR (FAT32 + NTFS + exFAT logical) and GPT (NTFS) images |
+| Primary boot sector destroyed | Backup copy used, substituted in memory only: NTFS (last sector of the volume), FAT32 (`BPB_BkBootSec`, normally sector 6), exFAT (backup boot region, sector 12). Automatic for table partitions; also found by the search | same images, each boot sector zeroed |
+| Partition entry deleted while others remain | Only space no readable volume covers is searched; the deleted volume is found there | MBR image with entry 1 removed |
+| Entry smaller than its filesystem, wrong type byte, overlaps, entries past the end of the disk | Reported in plain words; nothing is changed | MBR image with a shrunk, mistyped entry; synthetic tables |
+| GPT primary and backup both valid but different | Reported; the primary is used | synthetic GPT |
+| HFS+/HFSX, APFS | Found by volume header / container superblock (signature and size sanity only — not walkable yet). Their backup headers are not used to find volumes, because they cannot be told apart from primaries by signature alone | unit tests only (no Mac fixtures) |
+
+The search reads at 512-byte granularity in 4 MiB chunks, skips unreadable sectors, and skips
+over each volume it finds. It never writes a partition table: found volumes are scanned in
+place. Not detected: partitions with no surviving boot record (e.g. both NTFS boot sectors
+lost), Linux/BSD filesystems, and partitions inside dynamic disks or Storage Spaces.
+
 ## Not supported / not yet implemented
 
 - **HFS+ and APFS file listing** — detection only. Needs the B-tree catalog (HFS+) and

@@ -37,6 +37,16 @@ validated as `disk[0-9a-z]+` before being passed to the command. No elevation is
 - `unsafe` additionally appears in `crates/khodz-io/src/device/{windows,macos}.rs` for the size
   IOCTLs, each with a SAFETY note.
 
+## Partition analysis (Stage 8)
+
+- Analysis and the lost-partition search only read. Partition tables are never written or
+  "repaired": found volumes are scanned where they are.
+- When a volume's primary boot sector is damaged, its backup copy is substituted **in memory**
+  (`PatchedSource`, a read-only wrapper) so the filesystem can be opened. The medium is not
+  touched; tests compare source hashes before and after.
+- Every boot record found is checked against the structure it points to before it is trusted,
+  and all sizes and offsets from it are bounds-checked like any other on-disk value.
+
 ## Previewing recovered data (Stage 6)
 
 - Preview bytes are read through the same read-only path as scanning, capped at 32 MiB per

@@ -191,6 +191,48 @@ export interface JobProgress {
   bytes_total: number;
 }
 
+// Mirrors crates/khodz-engine/src/partitions.rs and app/src-tauri/src/partitions.rs
+export interface VolumeSpec {
+  offset: number;
+  size: number;
+  boot_backup: number | null;
+}
+
+export interface AnalyzedVolume {
+  origin: "table" | "search";
+  partition: number | null;
+  type_name: string | null;
+  offset: number;
+  size: number;
+  filesystem: FsKind;
+  label: string | null;
+  verified: boolean;
+  opens: boolean;
+  boot_backup: number | null;
+  notes: string[];
+  problems: string[];
+}
+
+export interface LayoutReport {
+  disk_size: number;
+  table: PartitionTable;
+  volumes: AnalyzedVolume[];
+  issues: string[];
+  unallocated: [number, number][];
+}
+
+export interface SearchProgress {
+  bytes_done: number;
+  bytes_total: number;
+  found: number;
+}
+
+export interface SearchOutcome {
+  layout: LayoutReport;
+  found: AnalyzedVolume[];
+  searched_bytes: number;
+}
+
 export interface FingerprintResult {
   sha256: string;
   bytes: number;

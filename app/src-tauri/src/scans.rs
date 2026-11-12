@@ -11,7 +11,7 @@ use khodz_db::{
     FolderEntry, ItemFilter, ItemStats, ItemView, NewScan, NewScanItem, NewScanVolume, Page, ScanItemDetail,
     ScanItemRow, ScanStatus, ScanVolume, Scope, SourceKind,
 };
-use khodz_engine::{DataState, Origin, ScanItem, ScanMode, ScanProgress, ScanSummary};
+use khodz_engine::{DataState, Origin, ScanItem, ScanMode, ScanProgress, ScanSummary, VolumeSpec};
 use khodz_io::{BlockSource, ImageFile};
 
 use crate::commands::CommandError;
@@ -35,7 +35,7 @@ pub struct ScanOutcome {
     pub summary: Option<ScanSummary>,
 }
 
-fn open_source(
+pub(crate) fn open_source(
     source: &ScanSource,
 ) -> Result<(Box<dyn BlockSource>, SourceKind, String, String), CommandError> {
     match source {
@@ -104,14 +104,41 @@ fn to_row(i: ScanItem) -> NewScanItem {
 }
 
 /// Run a scan to completion (or cancellation/failure), persisting results as it goes.
+#[cfg(test)]
 pub fn run_scan(
     state: &AppState,
     source: &ScanSource,
     mode: ScanMode,
     cancel: &CancelToken,
+    on_progress: impl FnMut(ScanProgress),
+) -> Result<ScanOutcome, CommandError> {
+    run_scan_volumes(state, source, mode, None, cancel, on_progress)
+}
+
+/// [`run_scan`] restricted to explicit volumes (e.g. lost partitions found by the search).
+pub fn run_scan_volumes(
+    state: &AppState,
+    source: &ScanSource,
+    mode: ScanMode,
+    volumes: Option<&[VolumeSpec]>,
+    cancel: &CancelToken,
     mut on_progress: impl FnMut(ScanProgress),
 ) -> Result<ScanOutcome, CommandError> {
     let (src, kind, path, label) = open_source(source)?;
+    if let Some(v) = volumes {
+        if v.is_empty() {
+            return Err(CommandError {
+                kind: "invalid_request",
+                message: "no volumes selected to scan".into(),
+            });
+        }
+        if v.iter().any(|s| s.offset >= src.len()) {
+            return Err(CommandError {
+                kind: "invalid_request",
+                message: "a selected volume lies beyond the end of the source; analyse it again".into(),
+            });
+        }
+    }
     let scan = state.db()?.create_scan(&NewScan {
         source_kind: kind,
         source_path: path,
@@ -138,9 +165,10 @@ pub fn run_scan(
         Ok(())
     };
 
-    let result = khodz_engine::scan(
+    let result = khodz_engine::scan_volumes(
         &*src,
         mode,
+        volumes,
         cancel,
         &mut |p| {
             let now = Instant::now();
@@ -293,13 +321,14 @@ pub async fn start_scan(
     app: AppHandle,
     source: ScanSource,
     mode: ScanMode,
+    volumes: Option<Vec<VolumeSpec>>,
     job_id: String,
     on_progress: Channel<ScanProgress>,
 ) -> Result<ScanOutcome, CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let cancel = state.register_job(&job_id)?;
-        let result = run_scan(&state, &source, mode, &cancel, |p| {
+        let result = run_scan_volumes(&state, &source, mode, volumes.as_deref(), &cancel, |p| {
             let _ = on_progress.send(p);
         });
         state.finish_job(&job_id);

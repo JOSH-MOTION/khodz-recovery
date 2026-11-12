@@ -3,6 +3,7 @@
 
 mod commands;
 mod images;
+mod partitions;
 mod recovery;
 mod scans;
 mod state;
@@ -37,6 +38,8 @@ pub fn run() {
             images::analyze_image,
             images::fingerprint_image,
             images::cancel_job,
+            partitions::inspect_partitions,
+            partitions::search_partitions,
             scans::start_scan,
             scans::list_scan_items,
             scans::scan_item_stats,

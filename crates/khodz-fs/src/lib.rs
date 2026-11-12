@@ -18,6 +18,7 @@ mod detect;
 mod exfat;
 mod fat;
 mod ntfs;
+pub mod probe;
 mod time;
 
 use serde::Serialize;

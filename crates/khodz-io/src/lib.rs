@@ -17,6 +17,7 @@ pub mod device;
 mod hash;
 mod image;
 mod mem;
+mod patched;
 mod slice;
 
 use khodz_core::{Error, Result};
@@ -28,6 +29,7 @@ pub use classify::classify_io_error;
 pub use hash::{SourceFingerprint, sha256_source};
 pub use image::ImageFile;
 pub use mem::MemSource;
+pub use patched::PatchedSource;
 pub use slice::SliceSource;
 
 /// A read-only, randomly addressable byte source (disk, volume, partition or image).

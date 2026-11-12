@@ -103,9 +103,24 @@ pub fn read<S: BlockSource + ?Sized>(src: &S) -> Result<Option<PartitionTable>> 
         let primary = load(src, ss, 1)?;
         let chosen = match primary {
             Ok(v) => {
-                // Verify the backup too, so a damaged backup is reported before it is needed.
-                if let Err(e) = load(src, ss, v.0.alternate_lba)? {
-                    warnings.push(format!("backup GPT header problem: {e}"));
+                // Verify the backup too, so a damaged backup is reported before it is needed,
+                // and compare it: two valid but different tables mean the disk was edited by
+                // something that updated only one copy, and the user should know which is used.
+                match load(src, ss, v.0.alternate_lba)? {
+                    Err(e) => warnings.push(format!("backup GPT header problem: {e}")),
+                    Ok((bh, barr)) => {
+                        if barr != v.1 {
+                            warnings.push(
+                                "primary and backup GPT partition entries differ; the primary is used".into(),
+                            );
+                        } else if bh.disk_guid != v.0.disk_guid
+                            || bh.first_usable != v.0.first_usable
+                            || bh.last_usable != v.0.last_usable
+                        {
+                            warnings
+                                .push("primary and backup GPT headers disagree; the primary is used".into());
+                        }
+                    }
                 }
                 Some(v)
             }

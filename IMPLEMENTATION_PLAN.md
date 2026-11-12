@@ -32,10 +32,49 @@ Vite 8.3, Tailwind 4.3, TypeScript 7.0, Vitest 5.1.
 | 5 | Quick + deep scan | Deleted-entry discovery (NTFS, FAT32, exFAT first); carving for JPEG/PNG/GIF/PDF/ZIP-family/MP4/MOV/MP3/WAV with validators; fragmentation honesty tests | ☑ Windows, images (2026-11-11) · live-drive scans need the app run as Administrator (helper not built) · MP3 not carved |
 | 6 | Results explorer + preview | Virtualised tree/list from paged DB; filters; image/text/hex preview (preview reads ≤ 8 MiB) | ☑ Windows (2026-11-11) · paged rather than virtualised lists · image previews read ≤ 32 MiB |
 | 7 | Recovery + integrity | Destination validation incl. same-disk refusal; streaming copy + SHA-256 verify; manifest; recovery history | ☑ Windows, images (2026-11-12) · same-disk detection for live drives verified on this PC's disks · macOS path compiles only |
-| 8 | Partition analysis | Lost partition search, overlapping/conflicting table reporting, scan of found partitions | ☐ |
+| 8 | Partition analysis | Lost partition search, overlapping/conflicting table reporting, scan of found partitions | ☑ Windows, images (2026-11-12) · live drives need Administrator · HFS+/APFS found but not walkable |
 | 9 | Installers + CI matrix | MSI/NSIS on Windows; `.dmg` on macOS (unsigned unless credentials supplied); GitHub Actions matrix running the full regression suite | ☐ |
 
 Each stage: implement → run tests → fix → update docs → only then continue.
+
+## Stage 8 — delivered
+
+- `khodz-fs::probe`: recognises FAT12/16/32, exFAT and NTFS boot sectors, HFS+/HFSX volume
+  headers and APFS container superblocks; knows each format's volume size and backup location;
+  verifies the structure a boot record points to (FAT media bytes, exFAT FAT entry 0, NTFS
+  `FILE` record at the MFT or its mirror) so random data is not mistaken for a volume.
+- `khodz-io::PatchedSource`: read-only view with the first sector replaced in memory — opens a
+  volume through its backup boot sector without touching the medium.
+- `khodz-part`: valid-but-different primary and backup GPTs are now reported.
+- `khodz-engine::partitions`:
+  - `inspect_layout`: for every table entry, what is really there; problems in plain words
+    (no filesystem, damaged boot sector, filesystem larger than its entry, type byte not
+    matching the filesystem, overlaps, entries past the end); partition types that hold no
+    filesystem by design (Microsoft reserved, LDM, swap…) are not flagged; unpartitioned space.
+  - Backup boot sectors are used automatically, so a normal scan now reads volumes whose
+    primary boot sector is destroyed.
+  - `search_lost_partitions`: reads only space no readable volume covers, in 4 MiB chunks at
+    512-byte granularity, tolerating bad sectors, cancellable with progress; accepts a boot
+    record as a primary or as a backup copy whose primary is gone; skips over volumes it finds;
+    notes overlaps with the current table and volumes truncated by the end of the disk.
+  - `scan_volumes`: scan an explicit list of volumes (found partitions).
+- App: `inspect_partitions`, `search_partitions` (job with progress and cancel), `start_scan`
+  with optional volumes. UI: "Partition check" on Disk Images and a "Partitions…" dialog per
+  drive — problems list, lost-partition search with progress, found volumes with what can be
+  done with each, and "Scan N partitions…" through the normal scan dialog.
+
+Verified end to end on copies of the Windows-built images, damaged the way real disks are:
+MBR erased; MBR and every boot sector erased (all three volumes recovered through backups);
+boot sectors erased with the table intact; one entry deleted; an entry shrunk and mistyped;
+a GPT disk wiped like `diskpart clean`; intact disks (no false alarms, nothing "found"). In
+each recovery case every live file matches the manifest SHA-256. In the real app: an image
+with its MBR and NTFS boot sector erased → table problem shown → search finds PFAT, LNTFS (via
+its backup boot sector) and LEXFAT → scan lists the same 31 files as the intact disk →
+recovering the NTFS volume gives 8/8 files matching the manifest; source hash unchanged.
+
+Known gaps: partitions with no surviving boot record at all are not found (deep-scan carving
+still works there); HFS+/APFS backup headers are not used; partitions are never rewritten into
+the table (by design).
 
 ## Stage 7 — delivered
 

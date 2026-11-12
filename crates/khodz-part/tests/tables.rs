@@ -250,6 +250,28 @@ fn damaged_backup_is_reported() {
 }
 
 #[test]
+fn valid_but_different_primary_and_backup_are_reported() {
+    let ss = 512u64;
+    let size = 16 * MIB;
+    let mut d = build_gpt(&spec(ss), size);
+    // Rewrite the backup with a consistent (correct CRCs) but different entry array, as a tool
+    // that updated only one copy would leave it.
+    let last_lba = size / ss - 1;
+    let array_sectors = (128 * 128) / ss;
+    let backup_arr_lba = last_lba - array_sectors;
+    let ba = (backup_arr_lba * ss) as usize;
+    let mut arr = d[ba..ba + 128 * 128].to_vec();
+    arr[128 + 56] = b'X'; // rename partition 2 in the backup only
+    let first_usable = 2 + array_sectors;
+    let b = header(ss, last_lba, 1, backup_arr_lba, first_usable, last_lba - 1 - array_sectors, &arr);
+    d[ba..ba + arr.len()].copy_from_slice(&arr);
+    d[(last_lba * ss) as usize..].copy_from_slice(&b);
+    let t = read_partition_table(&MemSource::new(d, 512)).unwrap();
+    assert_eq!(t.partitions[1].name.as_deref(), Some("Data café"), "primary is used");
+    assert!(t.warnings.iter().any(|w| w.contains("entries differ")), "{:?}", t.warnings);
+}
+
+#[test]
 fn hostile_header_values_are_rejected_without_panics() {
     let mut d = build_gpt(&spec(512), 16 * MIB);
     // Claim 2^32-1 entries of 2^32-8 bytes and fix up the CRC so only the bounds check stops it.

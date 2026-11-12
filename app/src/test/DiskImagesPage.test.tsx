@@ -14,6 +14,8 @@ vi.mock("../lib/api", async (importOriginal) => {
       fingerprintImage: vi.fn(),
       cancelJob: vi.fn(),
       startScan: vi.fn(),
+      inspectPartitions: vi.fn(),
+      searchPartitions: vi.fn(),
     },
   };
 });
@@ -66,6 +68,13 @@ beforeEach(() => {
   vi.mocked(api.analyzeImage).mockReset().mockResolvedValue(analysis);
   vi.mocked(api.fingerprintImage).mockReset();
   vi.mocked(api.cancelJob).mockReset().mockResolvedValue(true);
+  vi.mocked(api.inspectPartitions).mockReset().mockResolvedValue({
+    disk_size: info.size_bytes,
+    table: analysis.table,
+    volumes: [],
+    issues: [],
+    unallocated: [],
+  });
 });
 
 async function openImage() {
@@ -101,7 +110,7 @@ describe("DiskImagesPage", () => {
     const user = await openImage();
     await user.click(screen.getByRole("button", { name: "Scan image" }));
     await user.click(screen.getByRole("button", { name: "Start scan" }));
-    expect(api.startScan).toHaveBeenCalledWith({ kind: "image", path: info.path }, "quick", expect.any(String), expect.any(Function));
+    expect(api.startScan).toHaveBeenCalledWith({ kind: "image", path: info.path }, "quick", expect.any(String), expect.any(Function), null);
   });
 
   it("does nothing when the file dialog is cancelled", async () => {

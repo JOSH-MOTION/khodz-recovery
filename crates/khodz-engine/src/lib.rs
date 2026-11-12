@@ -17,7 +17,11 @@ use serde::{Deserialize, Serialize};
 use khodz_carve::{CarveStats, CarveStatus, carve};
 use khodz_core::{CancelToken, Error, Progress, Result};
 use khodz_fs::{Entry, ExtentQuality, FsKind};
-use khodz_io::{BlockSource, SliceSource};
+use khodz_io::BlockSource;
+
+pub mod partitions;
+
+pub use partitions::{AnalyzedVolume, LayoutReport, VolumeOrigin, VolumeSpec};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -103,6 +107,7 @@ pub struct VolumeSummary {
     pub deleted: u64,
     pub corrupt: u64,
     pub error: Option<String>,
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -224,10 +229,25 @@ fn metadata_item(e: Entry, vol_offset: u64, fs: FsKind) -> ScanItem {
     }
 }
 
-/// Run a scan. `on_item` receives every item found; returning an error aborts the scan.
+/// Run a scan of the volumes in the partition table (or the whole source when there is none).
+/// `on_item` receives every item found; returning an error aborts the scan.
 pub fn scan<S: BlockSource + ?Sized>(
     src: &S,
     mode: ScanMode,
+    cancel: &CancelToken,
+    on_progress: &mut dyn FnMut(ScanProgress),
+    on_item: &mut dyn FnMut(ScanItem) -> Result<()>,
+) -> Result<ScanSummary> {
+    scan_volumes(src, mode, None, cancel, on_progress, on_item)
+}
+
+/// Like [`scan`], but with an explicit list of volumes (e.g. lost partitions found by
+/// [`partitions::search_lost_partitions`]). `None` uses the current partition table; volumes
+/// whose primary boot sector is damaged are opened from their backup copy either way.
+pub fn scan_volumes<S: BlockSource + ?Sized>(
+    src: &S,
+    mode: ScanMode,
+    volumes: Option<&[VolumeSpec]>,
     cancel: &CancelToken,
     on_progress: &mut dyn FnMut(ScanProgress),
     on_item: &mut dyn FnMut(ScanItem) -> Result<()>,
@@ -242,26 +262,27 @@ pub fn scan<S: BlockSource + ?Sized>(
         detail: None,
     });
 
-    let table = khodz_part::read_partition_table(src)?;
-    let regions: Vec<(u64, u64)> = if table.partitions.is_empty() {
-        vec![(0, total)]
-    } else {
-        table
-            .partitions
-            .iter()
-            .filter(|p| !p.is_container())
-            .filter(|p| p.offset < total)
-            .map(|p| (p.offset, p.size.min(total.saturating_sub(p.offset))))
-            .collect()
+    let regions: Vec<VolumeSpec> = match volumes {
+        Some(v) => v.iter().filter(|s| s.offset < total).cloned().collect(),
+        None => {
+            let layout = partitions::inspect_layout(src)?;
+            if layout.volumes.is_empty() {
+                vec![VolumeSpec { offset: 0, size: total, boot_backup: None }]
+            } else {
+                layout.volumes.iter().map(AnalyzedVolume::spec).collect()
+            }
+        }
     };
 
     // Absolute start offsets explained by filesystem metadata (skipped by the carver).
     let mut known: HashSet<u64> = HashSet::new();
     let mut found = 0u64;
 
-    for (vol_offset, vol_size) in regions {
+    for spec in regions {
         cancel.check()?;
-        let slice = SliceSource::new(src, vol_offset, vol_size, "volume")?;
+        let vol_offset = spec.offset;
+        let vol_size = spec.size.min(total.saturating_sub(vol_offset));
+        let slice = partitions::open_volume(src, &VolumeSpec { size: vol_size, ..spec.clone() })?;
         let info = khodz_fs::detect(&slice)?;
         let mut vs = VolumeSummary {
             offset: vol_offset,
@@ -279,6 +300,9 @@ pub fn scan<S: BlockSource + ?Sized>(
                 format!("{} {}", vs.filesystem, vs.label.clone().unwrap_or_default()).trim().to_string(),
             ),
         });
+        if let Some(at) = spec.boot_backup {
+            vs.notes.push(format!("primary boot sector damaged; opened from the backup at byte {at}"));
+        }
         if info.kind.walkable() {
             match khodz_fs::open(&slice) {
                 Ok(fs) => {

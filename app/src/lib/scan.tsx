@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
 import { api, errorMessage } from "./api";
-import type { ScanOutcome, ScanProgress, ScanSource } from "./types";
+import type { ScanOutcome, ScanProgress, ScanSource, VolumeSpec } from "./types";
 
 export type ScanModeChoice = "quick" | "deep";
 
@@ -16,7 +16,7 @@ interface ScanState {
   active: ActiveScan | null;
   lastOutcome: ScanOutcome | null;
   lastError: string | null;
-  start: (source: ScanSource, label: string, mode: ScanModeChoice) => void;
+  start: (source: ScanSource, label: string, mode: ScanModeChoice, volumes?: VolumeSpec[]) => void;
   cancel: () => void;
 }
 
@@ -37,15 +37,19 @@ export function ScanProvider({ children, onStarted }: { children: ReactNode; onS
   activeRef.current = active;
 
   const start = useCallback(
-    (source: ScanSource, label: string, mode: ScanModeChoice) => {
+    (source: ScanSource, label: string, mode: ScanModeChoice, volumes?: VolumeSpec[]) => {
       if (activeRef.current) return;
       const jobId = newJobId();
       setLastError(null);
       setActive({ jobId, label, mode, startedAt: Date.now(), progress: null });
       onStarted?.();
       api
-        .startScan(source, mode, jobId, (progress) =>
-          setActive((a) => (a && a.jobId === jobId ? { ...a, progress } : a)),
+        .startScan(
+          source,
+          mode,
+          jobId,
+          (progress) => setActive((a) => (a && a.jobId === jobId ? { ...a, progress } : a)),
+          volumes ?? null,
         )
         .then((outcome) => setLastOutcome(outcome))
         .catch((e) => {

@@ -24,6 +24,10 @@ import type {
   ScanProgress,
   ScanSource,
   JobProgress,
+  LayoutReport,
+  SearchOutcome,
+  SearchProgress,
+  VolumeSpec,
   Page,
   PhysicalDisk,
   Recovery,
@@ -64,10 +68,23 @@ export const api = {
     return invoke<FingerprintResult>("fingerprint_image", { path, jobId, onProgress: channel });
   },
   cancelJob: (jobId: string) => invoke<boolean>("cancel_job", { jobId }),
-  startScan: (source: ScanSource, mode: "quick" | "deep", jobId: string, onProgress: (p: ScanProgress) => void) => {
+  /** `volumes` restricts the scan to those volumes (e.g. lost partitions); null = the partition table. */
+  startScan: (
+    source: ScanSource,
+    mode: "quick" | "deep",
+    jobId: string,
+    onProgress: (p: ScanProgress) => void,
+    volumes: VolumeSpec[] | null = null,
+  ) => {
     const channel = new Channel<ScanProgress>();
     channel.onmessage = onProgress;
-    return invoke<ScanOutcome>("start_scan", { source, mode, jobId, onProgress: channel });
+    return invoke<ScanOutcome>("start_scan", { source, mode, volumes, jobId, onProgress: channel });
+  },
+  inspectPartitions: (source: ScanSource) => invoke<LayoutReport>("inspect_partitions", { source }),
+  searchPartitions: (source: ScanSource, jobId: string, onProgress: (p: SearchProgress) => void) => {
+    const channel = new Channel<SearchProgress>();
+    channel.onmessage = onProgress;
+    return invoke<SearchOutcome>("search_partitions", { source, jobId, onProgress: channel });
   },
   listScanItems: (scanId: number, filter: ItemFilter, page: Page) =>
     invoke<ItemPage>("list_scan_items", { scanId, filter, page }),

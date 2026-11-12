@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ScanSource } from "../lib/types";
+import type { ScanSource, VolumeSpec } from "../lib/types";
 import { useScan, type ScanModeChoice } from "../lib/scan";
 import { Button } from "./ui";
 import { Icon } from "./Icon";
@@ -21,10 +21,13 @@ const MODES: { value: ScanModeChoice; title: string; text: string }[] = [
 export function ScanDialog({
   source,
   label,
+  volumes,
   onClose,
 }: {
   source: ScanSource;
   label: string;
+  /** Scan only these volumes (lost partitions found by the search) instead of the table. */
+  volumes?: VolumeSpec[];
   onClose: () => void;
 }) {
   const { start, active } = useScan();
@@ -47,6 +50,12 @@ export function ScanDialog({
       >
         <div className="border-b border-line px-5 py-4">
           <h2 className="text-[15px] font-semibold">Scan {label}</h2>
+          {volumes && (
+            <p className="mt-1 text-[12.5px] text-muted">
+              Only the {volumes.length === 1 ? "partition" : `${volumes.length} partitions`} you selected will be read
+              for files; a deep scan still searches the whole source for file signatures.
+            </p>
+          )}
           <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-muted">
             <Icon name="shield" size={14} className="text-ok" /> Read-only: nothing on this source will be changed.
           </p>
@@ -76,7 +85,7 @@ export function ScanDialog({
             disabled={active !== null}
             title={active ? "Another scan is running" : undefined}
             onClick={() => {
-              start(source, label, mode);
+              start(source, label, mode, volumes);
               onClose();
             }}
           >

@@ -1,5 +1,19 @@
 # Khodz Recovery — Testing Strategy
 
+## Stage 8 additions (Windows 11 x64, 2026-11-12)
+
+| Suite | Result |
+|---|---|
+| `cargo test -p khodz-engine --test lost_partitions -- --ignored` — damage applied in memory to copies of the Windows-built images: MBR erased; MBR + all three boot sectors erased; boot sectors erased with the table intact (plain scan uses backups); one MBR entry deleted; an entry shrunk and mistyped; GPT wiped like `diskpart clean`; intact MBR and GPT disks. **Every live file of every recovered volume matches the manifest SHA-256** (24 per MBR case, 8 for GPT) | 8 passed |
+| `cargo test -p khodz-engine` unit (gap maths, blank disk fully searched with progress, cancellation) | 3 passed |
+| `cargo test -p khodz-fs` (adds boot-record probe: NTFS size/backup/MFT-or-mirror check, noise and partial signatures rejected, HFS+ header offsets) | 14 passed |
+| `cargo test -p khodz-io` (adds `PatchedSource`: patch only the start, original untouched) | 4 unit + 14 integration passed |
+| `cargo test -p khodz-part` (adds valid-but-different primary/backup GPT) | 11 passed |
+| `cargo test -p khodz-recovery -- --include-ignored` (adds search + progress + cancel through the command layer, empty/out-of-range volume lists refused without a history row, MBR-erased fixture → found → scanned into history with labels; source unchanged) | 22 passed |
+| `npm test` (adds partition check: "matches" state, problems + unpartitioned space, search progress/cancel, found list with pre-selection of readable volumes, scan of only the chosen volumes with their backup-boot locations, nothing-found and cancelled states, administrator hint for drives; existing page tests updated for the new scan argument) | 65 passed |
+| Workspace `cargo test --workspace -- --include-ignored` excluding the admin-only device test | 172 passed |
+| Real app | image with MBR + NTFS boot sector erased → 3 volumes found (NTFS via backup) → scanned (31 files, same as intact) → NTFS volume recovered: 8/8 match the manifest; source SHA-256 unchanged |
+
 ## Stage 7 additions (Windows 11 x64, 2026-11-12)
 
 | Suite | Result |

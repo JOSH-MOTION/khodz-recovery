@@ -6,6 +6,7 @@ import { useAsync } from "../lib/useAsync";
 import { Button, Card, EmptyState, ErrorBanner, PageHeader } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { ScanDialog } from "../components/ScanDialog";
+import { PartitionCheck } from "../components/PartitionCheck";
 
 const BUS_LABEL: Record<BusType, string> = {
   usb: "USB",
@@ -110,6 +111,7 @@ function Chip({ children, tone = "neutral", title }: { children: string; tone?: 
 function DriveCard({ disk, selected, onSelect }: { disk: PhysicalDisk; selected: boolean; onSelect: () => void }) {
   const external = isExternal(disk);
   const [scanning, setScanning] = useState(false);
+  const [checking, setChecking] = useState(false);
   return (
     <Card
       className={`flex flex-col transition-[box-shadow,border-color] ${
@@ -164,15 +166,25 @@ function DriveCard({ disk, selected, onSelect }: { disk: PhysicalDisk; selected:
         <div className="selectable min-w-0 truncate font-mono text-[11.5px] text-muted" title={disk.device_path}>
           {disk.device_path} · {disk.logical_sector_size} B sectors
         </div>
-        <Button
-          variant="primary"
-          icon="scan"
-          disabled={!disk.media_present}
-          title="Reading a drive directly requires running Khodz Recovery as administrator"
-          onClick={() => setScanning(true)}
-        >
-          Scan
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button
+            disabled={!disk.media_present}
+            title="Check the partition table and search for lost partitions (needs administrator rights)"
+            onClick={() => setChecking(true)}
+          >
+            Partitions…
+          </Button>
+          <Button
+            variant="primary"
+            icon="scan"
+            disabled={!disk.media_present}
+            title="Reading a drive directly requires running Khodz Recovery as administrator"
+            onClick={() => setScanning(true)}
+          >
+            Scan
+          </Button>
+        </div>
+        {checking && <PartitionDialog disk={disk} onClose={() => setChecking(false)} />}
         {scanning && (
           <ScanDialog
             source={{ kind: "device", path: disk.device_path, label: disk.display_name }}
@@ -182,6 +194,41 @@ function DriveCard({ disk, selected, onSelect }: { disk: PhysicalDisk; selected:
         )}
       </div>
     </Card>
+  );
+}
+
+function PartitionDialog({ disk, onClose }: { disk: PhysicalDisk; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-6" onMouseDown={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Partitions of ${disk.display_name}`}
+        className="k-enter max-h-full w-full max-w-2xl overflow-y-auto rounded-xl border border-line bg-surface shadow-2xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+          <div>
+            <h2 className="text-[15px] font-semibold">Partitions of {disk.display_name}</h2>
+            <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-muted">
+              <Icon name="shield" size={14} className="text-ok" /> Read-only: the partition table is never changed.
+            </p>
+          </div>
+          <Button onClick={onClose}>Close</Button>
+        </div>
+        <div className="p-5">
+          <PartitionCheck
+            source={{ kind: "device", path: disk.device_path, label: disk.display_name }}
+            label={disk.display_name}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 

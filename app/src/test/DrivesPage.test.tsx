@@ -118,6 +118,7 @@ describe("DrivesPage", () => {
       "deep",
       expect.any(String),
       expect.any(Function),
+      null,
     );
     expect(screen.queryByRole("dialog")).toBeNull();
   });
