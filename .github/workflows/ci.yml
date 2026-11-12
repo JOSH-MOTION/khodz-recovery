@@ -1,0 +1,78 @@
+# Full regression suite on every push and pull request: the same commands that are run locally
+# (see TESTING.md), on Windows and macOS, against the committed Windows-built fixtures.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  frontend:
+    name: Frontend (types + tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  rust:
+    name: Rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain.toml selects stable with rustfmt + clippy; rustup installs it on first use.
+      - run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      # The Tauri crate embeds the built frontend at compile time.
+      - name: Build frontend
+        working-directory: app
+        run: |
+          npm ci
+          npm run build
+      - name: Unpack and verify fixtures
+        shell: pwsh
+        run: ./fixtures/unpack.ps1
+      - name: Formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Minimum supported Rust version still builds
+        if: runner.os == 'Windows'
+        run: |
+          rustup toolchain install 1.85 --profile minimal
+          cargo +1.85 check --workspace --all-targets
+      # --include-ignored runs the fixture tests. The raw-device test needs Administrator and
+      # a removable drive; it is run by hand (see TESTING.md).
+      - name: Tests (unit + fixtures)
+        run: cargo test --workspace -- --include-ignored --skip reads_real_device_consistently

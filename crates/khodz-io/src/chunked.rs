@@ -23,9 +23,7 @@ impl BadRanges {
             return;
         }
         self.total_bytes = self.total_bytes.saturating_add(r.end.saturating_sub(r.start));
-        if let Some(last) = self.ranges.last_mut()
-            && last.end == r.start
-        {
+        if let Some(last) = self.ranges.last_mut().filter(|last| last.end == r.start) {
             last.end = r.end;
             return;
         }

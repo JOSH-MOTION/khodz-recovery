@@ -94,9 +94,7 @@ impl BlockSource for Faulty {
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize> {
         let ss = u64::from(self.sector_size());
         let end = offset + buf.len() as u64;
-        if let Some(lost) = self.lost_at
-            && end > lost
-        {
+        if self.lost_at.is_some_and(|lost| end > lost) {
             return Err(Error::DeviceLost("test device unplugged".into()));
         }
         let first = offset / ss;

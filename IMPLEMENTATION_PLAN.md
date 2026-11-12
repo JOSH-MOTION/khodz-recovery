@@ -33,9 +33,47 @@ Vite 8.3, Tailwind 4.3, TypeScript 7.0, Vitest 5.1.
 | 6 | Results explorer + preview | Virtualised tree/list from paged DB; filters; image/text/hex preview (preview reads ≤ 8 MiB) | ☑ Windows (2026-11-11) · paged rather than virtualised lists · image previews read ≤ 32 MiB |
 | 7 | Recovery + integrity | Destination validation incl. same-disk refusal; streaming copy + SHA-256 verify; manifest; recovery history | ☑ Windows, images (2026-11-12) · same-disk detection for live drives verified on this PC's disks · macOS path compiles only |
 | 8 | Partition analysis | Lost partition search, overlapping/conflicting table reporting, scan of found partitions | ☑ Windows, images (2026-11-12) · live drives need Administrator · HFS+/APFS found but not walkable |
-| 9 | Installers + CI matrix | MSI/NSIS on Windows; `.dmg` on macOS (unsigned unless credentials supplied); GitHub Actions matrix running the full regression suite | ☐ |
+| 9 | Installers + CI matrix | MSI/NSIS on Windows; `.dmg` on macOS (unsigned unless credentials supplied); GitHub Actions matrix running the full regression suite | ◐ Windows MSI + setup.exe built and verified (2026-11-12) · CI and release workflows written and syntax-checked but **not yet run** (no GitHub remote) · macOS `.dmg` builds only in CI, so unverified |
 
 Each stage: implement → run tests → fix → update docs → only then continue.
+
+## Stage 9 — delivered on Windows; CI pending a GitHub remote
+
+- Bundling (`tauri.conf.json`): Windows MSI (per-machine, WiX) and NSIS setup.exe (per-user,
+  no administrator prompt; WebView2 bootstrapper if missing); macOS `.app` + `.dmg`
+  (minimum macOS 11). Publisher, copyright and descriptions set. No license field: the
+  project license is still an open decision.
+- Release blocker found and fixed: the release build refuses mismatched Tauri versions, and
+  the npm packages (api 2.12, plugin-opener 2.7, plugin-dialog 2.8) were ahead of the Rust
+  crates (2.11 / 2.5 / 2.7). Raising the Rust crates would have required raising the
+  workspace's minimum Rust version, so the npm packages are now pinned exactly to the crates'
+  versions instead.
+- MSRV bug found and fixed: the workspace declared Rust 1.85 but did not build with it (two
+  `let` chains, stable only since 1.88). Rewritten; `cargo +1.85 check --workspace
+  --all-targets` now passes and CI keeps checking it.
+- Fixtures: the exact Windows-built images verified locally are committed as
+  `fixtures/windows-built-fixtures.zip` (9.9 MB) with `fixtures/SHA256SUMS`;
+  `fixtures/unpack.ps1` expands and verifies them on Windows or macOS. Regenerating them on a
+  CI runner could legitimately differ (TRIM), which would make tests environment-dependent.
+- `.github/workflows/ci.yml`: frontend (typecheck + tests) on Linux; Rust on Windows and macOS
+  — fmt, clippy `-D warnings`, a Rust 1.85 (MSRV) build check, and the whole test suite
+  including the fixture tests (only the admin-only raw-device test is skipped).
+- `.github/workflows/release.yml`: on a `v*` tag, runs the CI suite, then builds Windows
+  (MSI + NSIS) and macOS universal (`.dmg`) installers into a draft pre-release. macOS signing
+  and notarisation switch on only when the Apple secrets exist; Windows Authenticode is not
+  wired up. Release notes state whether each build is signed.
+- RELEASING.md: local builds, release steps, signing, smoke-test checklist.
+
+Verified on this PC: `npm run tauri build` → `Khodz Recovery_0.1.0_x64_en-US.msi` (4.5 MB) and
+`…_x64-setup.exe` (3.2 MB). MSI administrative extract contains the release executable (byte-
+identical except Tauri's 3-byte bundle-type marker). setup.exe silent per-user install → files,
+Start-menu shortcut and uninstall entry (publisher, version) present → the installed app
+launches, lists this PC's drive, and scans `mbr-multi.img` with the expected per-volume counts →
+silent uninstall removes the files, shortcut and entry and keeps the scan history.
+
+Not verified: the workflows themselves (they need the repository on GitHub), the macOS build
+and `.dmg`, and the macOS-specific tests (`khodz-device`, `khodz-recover` disk mapping), which
+have only been cross-compiled — the first CI run will be their first run on a Mac.
 
 ## Stage 8 — delivered
 

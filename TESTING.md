@@ -1,5 +1,29 @@
 # Khodz Recovery — Testing Strategy
 
+## Continuous integration (Stage 9)
+
+`.github/workflows/ci.yml` runs on every push to `main`, every pull request, and before every
+release: frontend typecheck + tests (Linux), and on **Windows and macOS** `cargo fmt --check`,
+`cargo clippy --workspace --all-targets -D warnings`, and
+`cargo test --workspace -- --include-ignored --skip reads_real_device_consistently` against the
+committed fixtures (`fixtures/unpack.ps1` verifies them against `fixtures/SHA256SUMS` first).
+Windows also checks that the workspace still builds with Rust 1.85, the declared minimum.
+Status: written and YAML-validated; **not yet run**, because the repository has no GitHub
+remote.
+
+## Stage 9 checks (Windows 11 x64, 2026-11-12)
+
+| Check | Result |
+|---|---|
+| `npm run tauri build` | MSI 4.5 MB + NSIS setup.exe 3.2 MB built (after pinning the npm Tauri packages to the crates' versions) |
+| MSI administrative extract (`msiexec /a`, nothing installed) | one file, `khodz-recovery.exe`; identical to the release build except Tauri's bundle-type marker (3 bytes, `UNK` → `MSI`); unsigned |
+| setup.exe `/S` per-user install into a scratch folder | exit 0; executable + uninstaller, Start-menu shortcut, uninstall entry "Khodz Recovery 0.1.0", publisher set |
+| Installed app | launches; Drives lists this PC's disk and volumes; Disk Images → `mbr-multi.img` quick scan completes with PFAT 10 / LNTFS 11 / LEXFAT 10 files |
+| Silent uninstall | exit 0; files, shortcut and uninstall entry removed; scan history (`%APPDATA%\org.khodz.recovery\khodz.db`) kept |
+| `fixtures/unpack.ps1` in a clean folder | 7/7 files match `SHA256SUMS` |
+| `cargo +1.85 check --workspace --all-targets` (declared minimum Rust) | failed at first (let chains need 1.88) → fixed → passes |
+| Workflow files | parse as YAML; jobs and triggers as intended |
+
 ## Stage 8 additions (Windows 11 x64, 2026-11-12)
 
 | Suite | Result |

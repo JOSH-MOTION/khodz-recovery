@@ -30,28 +30,46 @@ crates/khodz-io     read-only block access: images, raw devices, cache, bad-sect
 crates/khodz-part   MBR/EBR/GPT partition tables
 crates/khodz-fs     filesystem detection; FAT/exFAT/NTFS metadata walking (live + deleted)
 crates/khodz-carve  signature carving with per-format structural validation
-crates/khodz-engine quick/deep scan orchestration
-fixtures/windows    generator for Windows-formatted test images (run as Administrator)
+crates/khodz-engine quick/deep scan orchestration, partition analysis, lost-partition search
+crates/khodz-recover destination checks, verified writing, output naming
+fixtures/           committed Windows-built test images (zip + SHA256SUMS) and their generators
 app/                React + TypeScript + Tailwind frontend (Vite)
 app/src-tauri       Tauri 2 shell (thin IPC layer)
+.github/workflows   CI (Windows + macOS regression suite) and release (installers)
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design.
 
 ## Development
 
-Prerequisites: Rust (stable), Node.js LTS. Windows also needs MSVC Build Tools ("Desktop
-development with C++"); macOS needs Xcode Command Line Tools.
+Prerequisites: Rust (stable; 1.85 minimum), Node.js 26. Windows also needs MSVC Build Tools
+("Desktop development with C++"); macOS needs Xcode Command Line Tools.
 
-```
+```bash
 cd app
-npm install
+npm ci
 npm run tauri dev      # run the desktop app
 ```
 
-Tests:
+Tests (what CI runs on Windows and macOS):
 
-```
-cargo test --workspace
+```bash
+pwsh fixtures/unpack.ps1    # once: expands and verifies the test images into fixtures/out
+cargo test --workspace -- --include-ignored --skip reads_real_device_consistently
 cd app && npm run typecheck && npm test
 ```
+
+Installers: `cd app && npm run tauri build` (MSI + setup.exe on Windows, .app + .dmg on macOS).
+See [RELEASING.md](RELEASING.md) for releases and code signing.
+
+## Installing
+
+Download the installer for your platform from the project's GitHub releases. Installers are
+currently **unsigned**: Windows SmartScreen and macOS Gatekeeper will warn before the first
+launch ([RELEASING.md](RELEASING.md) explains how to proceed). To read a live drive, run Khodz
+Recovery as administrator (Windows) or grant Full Disk Access / run as root (macOS); disk
+images need no special rights.
+
+## License
+
+Not chosen yet — a license must be added before the first public release.
